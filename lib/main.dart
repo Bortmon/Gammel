@@ -8,7 +8,6 @@ import 'package:intl/intl.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'dart:convert';
 
-// Importeer de schermen en modellen
 import 'models/login_result.dart';
 import 'screens/home_page.dart';
 
