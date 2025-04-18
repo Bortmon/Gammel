@@ -8,13 +8,14 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/login_result.dart';
-import '../models/work_shift.dart'; // Gebruik het bijgewerkte model
+import '../models/work_shift.dart';
 
 class ScheduleScreen extends StatefulWidget {
   final String? authToken;
   final bool isLoggedIn;
   final String? employeeId;
   final String? nodeId;
+  final String? userName; // <-- Nieuwe parameter
   final Future<LoginResult> Function(BuildContext context) loginCallback;
   final Future<void> Function() logoutCallback;
 
@@ -24,6 +25,7 @@ class ScheduleScreen extends StatefulWidget {
     required this.isLoggedIn,
     required this.employeeId,
     required this.nodeId,
+    required this.userName, // <-- Vereist maken
     required this.loginCallback,
     required this.logoutCallback,
   });
@@ -42,6 +44,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _localAuthToken;
   String? _localEmployeeId;
   String? _localNodeId;
+  String? _localUserName; // <-- Lokale state voor naam
   Duration _totalWeekDuration = Duration.zero;
   Duration _totalBreakDuration = Duration.zero;
 
@@ -52,9 +55,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
+    // Initialiseer lokale state met widget props
     _localAuthToken = widget.authToken;
     _localEmployeeId = widget.employeeId;
     _localNodeId = widget.nodeId;
+    _localUserName = widget.userName; // <-- Initialiseer lokale naam
+
     if (_localAuthToken != null && _localEmployeeId != null && _localNodeId != null) {
       _fetchSchedule();
       _checkFutureWeeks();
@@ -64,11 +70,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   static int _isoWeekNumber(DateTime date) {
     int dayOfYear = int.parse(DateFormat("D", "en_US").format(date));
     int woy = ((dayOfYear - date.weekday + 10) / 7).floor();
-    if (woy < 1) {
-      woy = _isoWeekNumber(DateTime(date.year - 1, 12, 31));
-    } else if (woy == 53 && DateTime(date.year, 1, 1).weekday != DateTime.thursday && DateTime(date.year, 12, 31).weekday != DateTime.thursday) {
-      woy = 1;
-    }
+    if (woy < 1) { woy = _isoWeekNumber(DateTime(date.year - 1, 12, 31)); }
+    else if (woy == 53 && DateTime(date.year, 1, 1).weekday != DateTime.thursday && DateTime(date.year, 12, 31).weekday != DateTime.thursday) { woy = 1; }
     return woy;
   }
 
@@ -79,9 +82,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (!mounted) return;
     if (res.success && res.employeeId != null && res.nodeId != null && res.authToken != null) {
       print("[Schedule] Login OK. Storing locally & Fetching...");
-      setState(() { _localAuthToken = res.authToken; _localEmployeeId = res.employeeId; _localNodeId = res.nodeId; _isLoading = true; _error = null; });
-      await _fetchSchedule();
-      _checkFutureWeeks();
+      // Update lokale state (naam wordt in MyApp al geupdate en doorgegeven bij volgende build)
+      setState(() {
+        _localAuthToken = res.authToken;
+        _localEmployeeId = res.employeeId;
+        _localNodeId = res.nodeId;
+        // Wacht met _localUserName updaten tot de widget herbouwd is met nieuwe props
+        _isLoading = true;
+        _error = null;
+      });
+      // Wacht kort op potentiële state update in parent voordat fetch start
+      await Future.delayed(Duration(milliseconds: 50));
+      if(mounted) {
+         _localUserName = widget.userName; // Update lokale naam met mogelijk nieuwe prop
+         await _fetchSchedule();
+         _checkFutureWeeks();
+      }
     } else {
       print("[Schedule] Login Fail/Cancel: ${res.errorMessage}");
       setState(() { _error = res.errorMessage ?? "Login mislukt."; _isLoading = false; });
@@ -162,7 +178,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
           final List<WorkShift> newShiftsParsed = _parseShiftsFromData(data, nodes, depts, codes);
           List<WorkShift> finalShiftsToProcess = newShiftsParsed;
-          String jsonToSave = currentJson;
+          String jsonToSave = currentJson; // Standaard opslaan
 
           // Vergelijk alleen als er oude data is
           if (previousJson != null && previousJson.isNotEmpty) {
@@ -173,9 +189,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 finalShiftsToProcess = mergedList;
                 changesFoundThisWeek = changes;
              } catch(e) { print("Err parsing/comparing old JSON for $storageKey: $e"); /* Fallback */ }
-              jsonToSave = currentJson; // Sla altijd de *nieuwe* data op
+              // Sla altijd de *nieuwe* (originele) JSON op
+              jsonToSave = currentJson;
           }
 
+          // Update UI en totalen alleen als gevraagd
           if (updateUiShifts && mounted) {
              setState(() { _shifts = finalShiftsToProcess; _error = null; });
              _calculateWeeklyTotals();
@@ -205,21 +223,32 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   Widget _buildWeekNavigator(BuildContext context) { final bool canNav=!_isLoading&&!_isCheckingFuture&&(_localAuthToken!=null); final txt=Theme.of(context).textTheme; final clr=Theme.of(context).colorScheme; return Padding( padding: const EdgeInsets.symmetric(vertical:8.0, horizontal:8.0), child: Material( color:clr.surfaceContainer, elevation:1, borderRadius:BorderRadius.circular(8), child: InkWell( borderRadius:BorderRadius.circular(8), onTap:null, child: Padding( padding:const EdgeInsets.symmetric(horizontal:8.0), child: Row( mainAxisAlignment:MainAxisAlignment.spaceBetween, children: [ IconButton(icon:const Icon(Icons.chevron_left), tooltip:'Vorige', onPressed:canNav?_goToPreviousWeek:null, color:canNav?clr.onSurface:Colors.grey,), GestureDetector(onTap:(){print("Week tap");}, child:Text('Wk $_currentWeek - $_currentYear', style:txt.titleMedium?.copyWith(fontWeight:FontWeight.bold),)), IconButton(icon:const Icon(Icons.chevron_right), tooltip:'Volgende', onPressed:canNav?_goToNextWeek:null, color:canNav?clr.onSurface:Colors.grey,), ], ),),),),); }
 
-   Widget _buildTotalsDisplay(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) {
-     String formattedTotal = WorkShift.formatDuration(_totalWeekDuration); String formattedBreak = WorkShift.formatDuration(_totalBreakDuration);
-     return Padding( padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 16.0), child: Card( elevation: 2, margin: EdgeInsets.zero, child: Padding( padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0), child: Row( mainAxisAlignment: MainAxisAlignment.center, children: [ Text( 'Totaal: ', style: textTheme.titleMedium, ), Text( formattedTotal, style: textTheme.titleMedium?.copyWith( fontWeight: FontWeight.bold, color: colorScheme.primary,), ), if (_totalBreakDuration > Duration.zero) Padding( padding: const EdgeInsets.only(left: 8.0), child: Text( '(Pauze: $formattedBreak)', style: textTheme.bodyMedium?.copyWith( color: textTheme.bodySmall?.color,), ), ), ], ), ), ), );
-   }
+  Widget _buildTotalsDisplay(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) { String formattedTotal = WorkShift.formatDuration(_totalWeekDuration); String formattedBreak = WorkShift.formatDuration(_totalBreakDuration); return Padding( padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 16.0), child: Card( elevation: 2, margin: EdgeInsets.zero, child: Padding( padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0), child: Row( mainAxisAlignment: MainAxisAlignment.center, children: [ Text( 'Totaal: ', style: textTheme.titleMedium, ), Text( formattedTotal, style: textTheme.titleMedium?.copyWith( fontWeight: FontWeight.bold, color: colorScheme.primary,), ), if (_totalBreakDuration > Duration.zero) Padding( padding: const EdgeInsets.only(left: 8.0), child: Text( '(Pauze: $formattedBreak)', style: textTheme.bodyMedium?.copyWith( color: textTheme.bodySmall?.color,), ), ), ], ), ), ), ); }
 
   @override Widget build(BuildContext context) {
+    // Probeer de naam te formatteren (Achternaam, Voornaam -> Voornaam Achternaam)
+    String displayTitle = 'Rooster'; // Fallback
+    if (_localUserName != null && _localUserName!.contains(',')) {
+       final parts = _localUserName!.split(',');
+       if (parts.length >= 2) {
+          displayTitle = 'Rooster ${parts[1].trim()} ${parts[0].trim()}';
+       } else {
+          displayTitle = 'Rooster ${_localUserName!}'; // Gebruik ongewijzigd als geen komma
+       }
+    } else if (_localUserName != null) {
+        displayTitle = 'Rooster ${_localUserName!}'; // Gebruik als geen komma
+    }
+
+
     return Scaffold(
       appBar: AppBar(
         // --- Titel Aangepast ---
-        title: const Text('Rooster'),
+        title: Text(displayTitle),
         // ---------------------
         actions: [
           if (_isCheckingFuture) const Padding(padding: EdgeInsets.only(right: 8.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Verversen', onPressed: (_isLoading || _isCheckingFuture || _localAuthToken == null) ? null : _fetchSchedule,),
-          if (_localAuthToken != null) IconButton(icon: const Icon(Icons.logout), tooltip: 'Uitloggen', onPressed: () async { await widget.logoutCallback(); if (mounted) { setState(() { _shifts = []; _error = "Uitgelogd."; _isLoading = false; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; }); } },),
+          if (_localAuthToken != null) IconButton(icon: const Icon(Icons.logout), tooltip: 'Uitloggen', onPressed: () async { await widget.logoutCallback(); if (mounted) { setState(() { _shifts = []; _error = "Uitgelogd."; _isLoading = false; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; _localUserName = null; /* Reset naam ook */ }); } },),
         ],
       ),
       body: Column(
@@ -274,7 +303,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                       }
 
                       Widget leadingWidget = Column( mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          // Icoon nu in subtitle
                           buildTimeWidget(shift.startTime, shift.previousStartTime, textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, fontSize: 15), textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough, color: Colors.grey[600])),
                           buildTimeWidget(shift.endTime, shift.previousEndTime, textTheme.bodyMedium?.copyWith(fontSize: 13), textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough, color: Colors.grey[600])),
                       ], );
@@ -292,7 +320,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                               subtitle: Padding( padding: const EdgeInsets.only(top: 4.0), child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
                                   if (leadingIcon != null) Padding( padding: const EdgeInsets.only(bottom: 3.0), child: Icon(leadingIcon, color: leadingIconColor, size: 16), ),
                                   if (shift.isModified) ...[
-                                     // Oude tijden zitten al in leadingWidget via buildTimeWidget
                                      if(shift.previousBreakDuration != null && shift.previousBreakDuration != shift.breakDuration) Text('Pauze was: ${WorkShift.formatDuration(shift.previousBreakDuration!)}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
                                      if (shift.previousDepartmentName != null && shift.previousDepartmentName != shift.departmentName) Text('Afd. was: ${shift.previousDepartmentName!}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
                                      const SizedBox(height: 4),
@@ -316,4 +343,5 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ],
     );
    }
+
 } // <<< EINDE ScheduleScreenState
