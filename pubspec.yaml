@@ -41,6 +41,9 @@ dependencies:
   quiver: ^3.2.1 # of nieuwste
   jwt_decoder: ^2.0.1 # 
   shared_preferences: ^2.2.3
+  flutter_lints: ^5.0.0 # Of je huidige linter versie
+  flutter_launcher_icons: ^0.13.1 # Of nieuwste versie
+  flutter_native_splash: ^2.4.0
   # Voeg eventueel andere packages toe die je nodig hebt
   cupertino_icons: ^1.0.8
 
@@ -96,3 +99,11 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_launcher_icons:
+  android: "launcher_icon" # Gebruikt standaard Android icon naam
+  ios: true               # Genereert iOS iconen
+  image_path: "assets/gammel.png" # Pad naar jouw G icoon
+  min_sdk_android: 21 # Optioneel: minimale Android SDK
+  # Optioneel: adaptive icons voor nieuwere Android versies
+  adaptive_icon_background: "#FFFFFF" # Witte achtergrond (pas aan indien nodig)
+  adaptive_icon_foreground: "assets/gammel.png" # Optioneel: aparte foreground laag

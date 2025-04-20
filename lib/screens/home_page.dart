@@ -59,16 +59,78 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> _navigateToScanner({bool fromDetails = false}) async {
+  Future<void> _navigateToScanner() async { // fromDetails verwijderd
     try {
-      final String? barcodeValue = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => const ScannerScreen()),);
-      if (!mounted) return;
-      if (barcodeValue != null && barcodeValue.isNotEmpty) {
-        if (fromDetails && Navigator.canPop(context)) { Navigator.pop(context); await Future.delayed(const Duration(milliseconds: 50)); }
-        _searchController.text = barcodeValue;
-        _searchProducts(barcodeValue);
+      final String? scanResult = await Navigator.push<String>(
+        context,
+        MaterialPageRoute(builder: (context) => const ScannerScreen()),
+      );
+
+      if (!mounted) return; // Check of de widget nog bestaat
+
+      if (scanResult != null && scanResult.isNotEmpty) {
+        print("[Navigation] Scan resultaat ontvangen: $scanResult");
+
+        // --- Check of het een URL of EAN is ---
+        final Uri? uri = Uri.tryParse(scanResult);
+        final bool isLikelyUrl = uri != null && uri.hasScheme && uri.hasAuthority;
+        final bool isGammaProductUrl = isLikelyUrl &&
+                                       uri.host.endsWith('gamma.nl') &&
+                                       uri.pathSegments.length > 2 &&
+                                       uri.pathSegments[uri.pathSegments.length - 2] == 'p';
+
+        final bool isEan13 = RegExp(r'^[0-9]{13}$').hasMatch(scanResult);
+
+        if (isGammaProductUrl) {
+           print("[Navigation] Gamma Product URL gescand: $scanResult");
+
+           // --- EXTRAHEER EN FILTER PRODUCT ID ---
+           String productIdRaw = uri.pathSegments.last; // Pak B191015
+           String searchId = productIdRaw; // Default
+
+           if (productIdRaw.isNotEmpty &&
+               (productIdRaw.startsWith('B') || productIdRaw.startsWith('b')) && // Check voor 'B' of 'b'
+               productIdRaw.length > 1) {
+              searchId = productIdRaw.substring(1); // Verwijder de eerste letter
+              print("[Navigation] Geëxtraheerde en gefilterde Product ID: $searchId");
+           } else {
+               print("[Navigation] Geëxtraheerde Product ID (geen 'B' gefilterd): $searchId");
+           }
+           // Optioneel: Verwijder leidende nullen voor consistentie (zoals 055510 -> 55510)
+           try {
+             searchId = int.parse(searchId).toString();
+             print("[Navigation] Opgeschoonde ID voor zoeken: $searchId");
+           } catch(e) {
+               print("[Navigation] Kon ID '$searchId' niet naar int parsen, gebruik origineel (na B filter).");
+           }
+           // --- EINDE EXTRACTIE EN FILTER ---
+
+
+           // Gebruik de gefilterde/opgeschoonde ID om te zoeken
+           _searchController.text = searchId; // Zet geschoonde ID in de zoekbalk
+           _searchProducts(searchId); // Start zoekopdracht met de geschoonde ID
+
+        } else if (isEan13) {
+           print("[Navigation] EAN13 gescand: $scanResult. Start zoekopdracht...");
+           _searchController.text = scanResult;
+           _searchProducts(scanResult);
+        } else {
+           print("[Navigation] Onbekend scan resultaat formaat: $scanResult");
+           _searchController.text = scanResult;
+           ScaffoldMessenger.of(context).showSnackBar(
+             SnackBar(content: Text('Onbekend code formaat gescand: $scanResult')),
+           );
+           setState(() { _products = []; _error = null; });
+        }
+        // --- Einde Check ---
+
+      } else {
+        print("Scanner gesloten zonder resultaat.");
       }
-    } catch (e) { if (!mounted) return; setState(() { _error = "Fout scanner: $e"; _isLoading = false; }); }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _error = "Fout scanner: $e"; _isLoading = false; });
+    }
   }
 
   Future<void> _searchProducts(String query) async {
