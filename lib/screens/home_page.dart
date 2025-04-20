@@ -100,13 +100,13 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       if (response.statusCode == 200) {
         final document = parse(response.body);
-        final List<Product> foundProducts = _parseProducts(document); // Gebruik bijgewerkte parser
+        final List<Product> foundProducts = _parseProducts(document);
         setState(() { _products = foundProducts; if (_products.isEmpty && _lastSearchTerm.isNotEmpty) { _error = 'Geen producten gevonden voor "$_lastSearchTerm".'; } _isLoading = false; });
       } else { setState(() { _error = 'Fout: Status ${response.statusCode}'; _isLoading = false; }); }
     } catch (e) { print('Error search results: $e'); if (!mounted) return; setState(() { _error = 'Fout: $e'; _isLoading = false; }); }
   }
 
-  // --- PARSER BIJGEWERKT OM PROMOTIEBESCHRIJVING TE PARSEN ---
+  // --- PARSER UITGEBREID MET PRIJS PER STUK ---
   List<Product> _parseProducts(dom.Document document) {
     final products = <Product>[];
     final productElements = document.querySelectorAll('article.js-product-tile');
@@ -115,7 +115,8 @@ class _HomePageState extends State<HomePage> {
     for (final element in productElements) {
       String? imageUrl; String? priceString; String? oldPriceString; String? discountLabel;
       String? title = 'Titel?'; String? articleCode = 'Code?'; String? eanCode; String? productUrl;
-      String? promotionDescription; // Variabele voor beschrijving
+      String? promotionDescription;
+      String? pricePerUnitString; // Nieuwe variabele
 
       try {
         // Basis Info
@@ -140,33 +141,51 @@ class _HomePageState extends State<HomePage> {
         // Prijs & Korting Parsing
         final priceContainer = element.querySelector('.product-price-container');
         if (priceContainer != null) {
+             // Huidige prijs (vaak per m2)
              final priceElement = priceContainer.querySelector('.product-tile-price .product-tile-price-current');
              final decimalElement = priceContainer.querySelector('.product-tile-price .product-tile-price-decimal');
-             if (priceElement != null && decimalElement != null) { String intPart = priceElement.text.trim().replaceAll('.', ''); String decPart = decimalElement.text.trim(); if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; } }
+             if (priceElement != null && decimalElement != null) {
+                String intPart = priceElement.text.trim().replaceAll('.', ''); String decPart = decimalElement.text.trim();
+                if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; }
+             }
              if (priceString == null) { priceString = element.attributes['data-price']?.trim(); }
+
+             // Oude prijs (vaak per m2)
              final oldPriceElem = priceContainer.querySelector('.product-tile-price-old .before-price') ?? priceContainer.querySelector('.product-tile-price-old span.before-price') ?? priceContainer.querySelector('span.product-tile-price-old');
-             if (oldPriceElem != null) { oldPriceString = oldPriceElem.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.'); if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; } }
+             if (oldPriceElem != null) {
+                 oldPriceString = oldPriceElem.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.');
+                 if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; }
+             }
+
+             // Prijs per eenheid
+             final pricePerUnitElement = priceContainer.querySelector('.product-price-per-unit span:last-child');
+             if (pricePerUnitElement != null) {
+                pricePerUnitString = pricePerUnitElement.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.');
+                if (pricePerUnitString.isEmpty) pricePerUnitString = null;
+             }
+
+             // Discount label
              discountLabel = priceContainer.querySelector('.promotion-text-label')?.text.trim();
              if (discountLabel == null || discountLabel.isEmpty) { final sticker = element.querySelector('span.sticker.promo, img.sticker.promo'); if (sticker != null) { discountLabel = sticker.attributes['alt']?.trim(); } }
              if (discountLabel == null || discountLabel.isEmpty) { final badge = element.querySelector('.product-tile-badge'); if (badge != null) { discountLabel = badge.text.trim();} }
              if (discountLabel == null || discountLabel.isEmpty) { final loyaltyLabel = priceContainer.querySelector('div.product-loyalty-label') ?? element.querySelector('dt.product-loyalty-label'); if (loyaltyLabel != null && loyaltyLabel.text.contains("Voordeelpas")) { discountLabel = "Voordeelpas"; final promoLabelDiv = element.querySelector('dt.promotion-info-label div div'); if (promoLabelDiv != null) { String promoText = promoLabelDiv.text.trim(); if(promoText.isNotEmpty) discountLabel = promoText; } } }
-             // --- NIEUW: Parse Promotion Description (vaak verborgen op lijstpagina) ---
-             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description'); // Zoek binnen prijs container of direct onder element
-             if (promoDescElement != null) {
-                 promotionDescription = promoDescElement.text.trim().replaceAll(RegExp(r'Bekijk alle producten.*$', multiLine: true), '').replaceAll(RegExp(r'\s+'), ' ').trim();
-                 if (promotionDescription.isEmpty) promotionDescription = null;
-             }
-             // --- EINDE NIEUW ---
              if (discountLabel == null && oldPriceString != null && priceString != null && oldPriceString != priceString) { discountLabel = "Actie"; }
+
+             // Promotion Description (vaak verborgen)
+             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description');
+             if (promoDescElement != null) { promotionDescription = promoDescElement.text.trim().replaceAll(RegExp(r'Bekijk alle producten.*$', multiLine: true), '').replaceAll(RegExp(r'\s+'), ' ').trim(); if (promotionDescription.isEmpty) promotionDescription = null; }
+
         } else { priceString = element.attributes['data-price']?.trim(); print("[Parser] Price container not found for: $title"); }
         if (discountLabel != null && discountLabel.isEmpty) discountLabel = null;
+
 
         if (title != 'Titel?' && articleCode != 'Code?') {
           products.add(Product(
             title: title, articleCode: articleCode, eanCode: eanCode, imageUrl: imageUrl,
             productUrl: productUrl, priceString: priceString,
             oldPriceString: oldPriceString, discountLabel: discountLabel,
-            promotionDescription: promotionDescription, // <-- Meegeven
+            promotionDescription: promotionDescription,
+            pricePerUnitString: pricePerUnitString, // Meegeven
           ));
         }
       } catch (e, s) { print("[Parser Results] Error parsing product: $e\nStack: $s"); }
@@ -174,7 +193,6 @@ class _HomePageState extends State<HomePage> {
     print("[Parser] Parsed ${products.length} products.");
     return products;
   }
-  // --- EINDE PARSER AANPASSING ---
 
   Future<void> _navigateToDetails(BuildContext context, Product product) async {
     final result = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => ProductDetailsScreen(product: product),),);
@@ -211,17 +229,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildResultsArea() {
-    final txt = Theme.of(context).textTheme;
-    final clr = Theme.of(context).colorScheme;
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark; // Check dark mode
-
+    final txt = Theme.of(context).textTheme; final clr = Theme.of(context).colorScheme; final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     if (_isLoading) { return const Center(child: CircularProgressIndicator()); }
     else if (_error != null) { return Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text(_error!, style: TextStyle(color: clr.error, fontSize: 16), textAlign: TextAlign.center,),)); }
     else if (_products.isNotEmpty) {
       return ListView.builder(itemCount: _products.length, itemBuilder: (context, index) {
           final p = _products[index];
           return Card(clipBehavior: Clip.antiAlias, child: InkWell(onTap: () => _navigateToDetails(context, p), child: Padding(padding: const EdgeInsets.all(12.0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Afbeelding (blijft hetzelfde)
+                // Afbeelding
                 ClipRRect(borderRadius: BorderRadius.circular(4.0), child: SizedBox(width: 70, height: 70, child: p.imageUrl != null ? Image.network(p.imageUrl!, fit: BoxFit.cover,
                           loadingBuilder: (ctx, child, pr) => pr == null ? child : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)),
                           errorBuilder: (ctx, err, st) => Container(color: clr.surfaceContainerHighest.withAlpha((255 * .3).round()), alignment: Alignment.center, child: Icon(Icons.broken_image, color: Colors.grey[400])),)
