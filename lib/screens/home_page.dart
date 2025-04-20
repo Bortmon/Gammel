@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' as dom;
-import 'dart:async'; // Voor Future.delayed
+import 'dart:async';
 
 import '../models/login_result.dart';
-import '../models/product.dart'; // Gebruik bijgewerkt model
+import '../models/product.dart';
 import 'product_details_screen.dart';
 import 'schedule_screen.dart';
 import 'scanner_screen.dart';
@@ -49,16 +49,9 @@ class _HomePageState extends State<HomePage> {
   final String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
   @override
-  void initState() {
-    super.initState();
-    _searchController.addListener(() { setState(() {}); });
-  }
-
+  void initState() { super.initState(); _searchController.addListener(() { setState(() {}); }); }
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  void dispose() { _searchController.dispose(); super.dispose(); }
 
   Future<void> _navigateToScanner() async {
     try {
@@ -106,8 +99,7 @@ class _HomePageState extends State<HomePage> {
     } catch (e) { print('Error search results: $e'); if (!mounted) return; setState(() { _error = 'Fout: $e'; _isLoading = false; }); }
   }
 
-  // --- PARSER UITGEBREID MET PRIJS PER STUK ---
-  List<Product> _parseProducts(dom.Document document) {
+ List<Product> _parseProducts(dom.Document document) {
     final products = <Product>[];
     final productElements = document.querySelectorAll('article.js-product-tile');
     print("[Parser] Found ${productElements.length} product tiles.");
@@ -115,8 +107,7 @@ class _HomePageState extends State<HomePage> {
     for (final element in productElements) {
       String? imageUrl; String? priceString; String? oldPriceString; String? discountLabel;
       String? title = 'Titel?'; String? articleCode = 'Code?'; String? eanCode; String? productUrl;
-      String? promotionDescription;
-      String? pricePerUnitString; // Nieuwe variabele
+      String? promotionDescription; String? pricePerUnitString; String? priceUnit; String? pricePerUnitLabel;
 
       try {
         // Basis Info
@@ -141,51 +132,31 @@ class _HomePageState extends State<HomePage> {
         // Prijs & Korting Parsing
         final priceContainer = element.querySelector('.product-price-container');
         if (priceContainer != null) {
-             // Huidige prijs (vaak per m2)
              final priceElement = priceContainer.querySelector('.product-tile-price .product-tile-price-current');
              final decimalElement = priceContainer.querySelector('.product-tile-price .product-tile-price-decimal');
-             if (priceElement != null && decimalElement != null) {
-                String intPart = priceElement.text.trim().replaceAll('.', ''); String decPart = decimalElement.text.trim();
-                if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; }
-             }
+             if (priceElement != null && decimalElement != null) { String intPart = priceElement.text.trim().replaceAll('.', ''); String decPart = decimalElement.text.trim(); if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; } }
              if (priceString == null) { priceString = element.attributes['data-price']?.trim(); }
-
-             // Oude prijs (vaak per m2)
+             final priceUnitElement = priceContainer.querySelector('.product-tile-price .product-tile-price-unit'); if (priceUnitElement != null) { priceUnit = priceUnitElement.text.trim(); if (priceUnit.isEmpty) priceUnit = null; }
              final oldPriceElem = priceContainer.querySelector('.product-tile-price-old .before-price') ?? priceContainer.querySelector('.product-tile-price-old span.before-price') ?? priceContainer.querySelector('span.product-tile-price-old');
-             if (oldPriceElem != null) {
-                 oldPriceString = oldPriceElem.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.');
-                 if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; }
-             }
-
-             // Prijs per eenheid
-             final pricePerUnitElement = priceContainer.querySelector('.product-price-per-unit span:last-child');
-             if (pricePerUnitElement != null) {
-                pricePerUnitString = pricePerUnitElement.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.');
-                if (pricePerUnitString.isEmpty) pricePerUnitString = null;
-             }
-
-             // Discount label
+             if (oldPriceElem != null) { oldPriceString = oldPriceElem.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.'); if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; } }
+             final pricePerUnitElement = priceContainer.querySelector('.product-price-per-unit span:last-child'); if (pricePerUnitElement != null) { pricePerUnitString = pricePerUnitElement.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.'); if (pricePerUnitString.isEmpty) pricePerUnitString = null; }
+             final pricePerUnitLabelElement = priceContainer.querySelector('.product-price-per-unit span:first-child'); if (pricePerUnitLabelElement != null) { pricePerUnitLabel = pricePerUnitLabelElement.text.trim(); if (pricePerUnitLabel.isEmpty) pricePerUnitLabel = null; }
              discountLabel = priceContainer.querySelector('.promotion-text-label')?.text.trim();
              if (discountLabel == null || discountLabel.isEmpty) { final sticker = element.querySelector('span.sticker.promo, img.sticker.promo'); if (sticker != null) { discountLabel = sticker.attributes['alt']?.trim(); } }
              if (discountLabel == null || discountLabel.isEmpty) { final badge = element.querySelector('.product-tile-badge'); if (badge != null) { discountLabel = badge.text.trim();} }
              if (discountLabel == null || discountLabel.isEmpty) { final loyaltyLabel = priceContainer.querySelector('div.product-loyalty-label') ?? element.querySelector('dt.product-loyalty-label'); if (loyaltyLabel != null && loyaltyLabel.text.contains("Voordeelpas")) { discountLabel = "Voordeelpas"; final promoLabelDiv = element.querySelector('dt.promotion-info-label div div'); if (promoLabelDiv != null) { String promoText = promoLabelDiv.text.trim(); if(promoText.isNotEmpty) discountLabel = promoText; } } }
+             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description'); if (promoDescElement != null) { promotionDescription = promoDescElement.text.trim().replaceAll(RegExp(r'Bekijk alle producten.*$', multiLine: true), '').replaceAll(RegExp(r'\s+'), ' ').trim(); if (promotionDescription.isEmpty) promotionDescription = null; }
              if (discountLabel == null && oldPriceString != null && priceString != null && oldPriceString != priceString) { discountLabel = "Actie"; }
-
-             // Promotion Description (vaak verborgen)
-             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description');
-             if (promoDescElement != null) { promotionDescription = promoDescElement.text.trim().replaceAll(RegExp(r'Bekijk alle producten.*$', multiLine: true), '').replaceAll(RegExp(r'\s+'), ' ').trim(); if (promotionDescription.isEmpty) promotionDescription = null; }
-
         } else { priceString = element.attributes['data-price']?.trim(); print("[Parser] Price container not found for: $title"); }
         if (discountLabel != null && discountLabel.isEmpty) discountLabel = null;
-
 
         if (title != 'Titel?' && articleCode != 'Code?') {
           products.add(Product(
             title: title, articleCode: articleCode, eanCode: eanCode, imageUrl: imageUrl,
-            productUrl: productUrl, priceString: priceString,
+            productUrl: productUrl, priceString: priceString, priceUnit: priceUnit,
             oldPriceString: oldPriceString, discountLabel: discountLabel,
             promotionDescription: promotionDescription,
-            pricePerUnitString: pricePerUnitString, // Meegeven
+            pricePerUnitString: pricePerUnitString, pricePerUnitLabel: pricePerUnitLabel,
           ));
         }
       } catch (e, s) { print("[Parser Results] Error parsing product: $e\nStack: $s"); }
@@ -220,50 +191,120 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0),
+        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
         child: Column(children: [
-            TextField(controller: _searchController, decoration: InputDecoration(labelText: 'Zoek product of scan barcode', prefixIcon: const Icon(Icons.search), suffixIcon: _searchController.text.isNotEmpty ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); setState(() { _products = []; _error = null; _lastSearchTerm = ''; }); },) : null,), onSubmitted: _searchProducts,),
-            const SizedBox(height: 16),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 20.0),
+              child: TextField(controller: _searchController, decoration: InputDecoration(labelText: 'Zoek product of scan barcode', prefixIcon: const Icon(Icons.search), suffixIcon: _searchController.text.isNotEmpty ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); setState(() { _products = []; _error = null; _lastSearchTerm = ''; }); },) : null,), onSubmitted: _searchProducts,),
+            ),
             Expanded(child: _buildResultsArea(),),
           ],),),);
   }
 
   Widget _buildResultsArea() {
-    final txt = Theme.of(context).textTheme; final clr = Theme.of(context).colorScheme; final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final txt = Theme.of(context).textTheme;
+    final clr = Theme.of(context).colorScheme;
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+
     if (_isLoading) { return const Center(child: CircularProgressIndicator()); }
     else if (_error != null) { return Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text(_error!, style: TextStyle(color: clr.error, fontSize: 16), textAlign: TextAlign.center,),)); }
     else if (_products.isNotEmpty) {
-      return ListView.builder(itemCount: _products.length, itemBuilder: (context, index) {
+      return ListView.builder(
+        padding: const EdgeInsets.only(top: 0, bottom: 16.0),
+        itemCount: _products.length,
+        itemBuilder: (context, index) {
           final p = _products[index];
-          return Card(clipBehavior: Clip.antiAlias, child: InkWell(onTap: () => _navigateToDetails(context, p), child: Padding(padding: const EdgeInsets.all(12.0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Afbeelding
-                ClipRRect(borderRadius: BorderRadius.circular(4.0), child: SizedBox(width: 70, height: 70, child: p.imageUrl != null ? Image.network(p.imageUrl!, fit: BoxFit.cover,
-                          loadingBuilder: (ctx, child, pr) => pr == null ? child : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)),
-                          errorBuilder: (ctx, err, st) => Container(color: clr.surfaceContainerHighest.withAlpha((255 * .3).round()), alignment: Alignment.center, child: Icon(Icons.broken_image, color: Colors.grey[400])),)
-                        : Container(color: clr.surfaceContainerHighest.withAlpha((255 * .3).round()), alignment: Alignment.center, child: Icon(Icons.image_not_supported, color: Colors.grey[400])),),),
-                const SizedBox(width: 12),
-                // Tekstuele Info
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(p.title, style: txt.titleMedium?.copyWith(height: 1.3), maxLines: 2, overflow: TextOverflow.ellipsis,), const SizedBox(height: 4),
-                      Text('Art: ${p.articleCode}', style: txt.bodyMedium,),
-                      if (p.eanCode != null) Padding(padding: const EdgeInsets.only(top: 2.0), child: Text('EAN: ${p.eanCode}', style: txt.bodySmall)),
-                      const SizedBox(height: 6),
-                      // Prijs & Korting Weergave
-                      Row( crossAxisAlignment: CrossAxisAlignment.end, children: [
-                          if (p.priceString != null)
-                            Flexible( child: RichText( text: TextSpan( style: txt.bodyMedium?.copyWith(color: txt.bodyLarge?.color), children: [
-                                  if (p.oldPriceString != null) TextSpan( text: '€ ${p.oldPriceString}  ', style: TextStyle( decoration: TextDecoration.lineThrough, color: Colors.grey[600], fontSize: txt.bodySmall?.fontSize ?? 12,), ),
-                                  TextSpan( text: '€ ${p.priceString}', style: TextStyle( fontSize: txt.titleMedium?.fontSize ?? 16, color: clr.primary, fontWeight: FontWeight.bold,),),
-                                ],),),)
-                          else Text('Prijs?', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
-                          const SizedBox(width: 8),
-                          if (p.discountLabel != null)
-                            Flexible( child: Chip( label: Text(p.discountLabel!, overflow: TextOverflow.ellipsis), labelStyle: txt.labelSmall?.copyWith(color: isDarkMode ? Colors.black : clr.onErrorContainer, fontWeight: isDarkMode ? FontWeight.bold : FontWeight.normal,), backgroundColor: isDarkMode ? Colors.orange[700] : clr.errorContainer, padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), materialTapTargetSize: MaterialTapTargetSize.shrinkWrap, visualDensity: VisualDensity.compact, shape: RoundedRectangleBorder( borderRadius: BorderRadius.circular(4.0), side: BorderSide.none, ),),),
+          return Card(
+            clipBehavior: Clip.antiAlias,
+            margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
+            child: InkWell(
+              onTap: () => _navigateToDetails(context, p),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Afbeelding
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8.0),
+                      child: Container(
+                        color: clr.surfaceContainer,
+                        width: 85, height: 85,
+                        child: p.imageUrl != null
+                            ? Image.network( p.imageUrl!, fit: BoxFit.contain,
+                                loadingBuilder: (ctx, child, pr) => pr == null ? child : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)),
+                                errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, color: clr.onSurfaceVariant, size: 30)),
+                              )
+                            : Center(child: Icon(Icons.image_not_supported_outlined, color: clr.onSurfaceVariant, size: 30)),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    // Tekstuele Info
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(p.title, style: txt.titleMedium?.copyWith(height: 1.3, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis,),
+                          const SizedBox(height: 6),
+                          Text('Art: ${p.articleCode}', style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant)),
+                          if (p.eanCode != null) Padding(padding: const EdgeInsets.only(top: 4.0), child: Text('EAN: ${p.eanCode}', style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant))),
+                          const SizedBox(height: 10),
+                          Divider(height: 1, thickness: 0.5, color: clr.outlineVariant.withOpacity(0.5)),
+                          const SizedBox(height: 10),
+                          // Prijs & Korting Weergave
+                          Row(
+                             crossAxisAlignment: CrossAxisAlignment.center,
+                             children: [
+                                if (p.priceString != null)
+                                  Flexible( child: RichText( text: TextSpan( style: txt.bodyLarge?.copyWith(color: clr.onSurface), children: [
+                                        if (p.oldPriceString != null) TextSpan( text: '€ ${p.oldPriceString}  ', style: TextStyle( decoration: TextDecoration.lineThrough, color: clr.onSurfaceVariant.withOpacity(0.8), fontSize: txt.bodyMedium?.fontSize ?? 14,), ),
+                                        TextSpan( text: '€ ${p.priceString}', style: TextStyle( fontSize: txt.titleLarge?.fontSize ?? 20, color: clr.secondary, fontWeight: FontWeight.bold,),), // Gebruik secundaire kleur
+                                        if (p.priceUnit != null) TextSpan( text: ' ${p.priceUnit}', style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant) )
+                                      ],),),)
+                                else Text('Prijs?', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
+                                const Spacer(), // Duwt label naar rechts
+
+                                // --- AANGEPASTE ACTIE KNOP/LABEL ---
+                                if (p.discountLabel != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      // Gebruik secundaire kleur in licht thema, oranje in donker thema
+                                      color: isDarkMode ? Colors.orange[700] : clr.secondary,
+                                      borderRadius: BorderRadius.circular(6.0),
+                                    ),
+                                    child: Text(
+                                      p.discountLabel!,
+                                      style: txt.labelSmall?.copyWith(
+                                        // Pas tekstkleur aan voor contrast
+                                        color: isDarkMode ? Colors.white : clr.onSecondary,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                // --- EINDE AANGEPASTE KNOP ---
+                              ],
+                          ),
+                          // Prijs per stuk (optioneel, hier niet getoond)
+                          if (p.pricePerUnitString != null && p.priceString != p.pricePerUnitString)
+                             Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Text(
+                                   '€ ${p.pricePerUnitString} ${p.pricePerUnitLabel ?? "p/st"}',
+                                   style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+                                ),
+                             ),
                         ],
                       ),
-                    ],),),
-              ],),),),);
-        },);
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      );
     } else { return Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text(_lastSearchTerm.isEmpty ? 'Zoek of scan.' : 'Geen producten voor "$_lastSearchTerm".', textAlign: TextAlign.center, style: txt.bodyMedium,),)); }
   }
 }

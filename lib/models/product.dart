@@ -6,11 +6,13 @@ class Product {
   final String? eanCode;
   final String? imageUrl;
   final String? productUrl;
-  final String? priceString;      // Prijs (bv. per m2 of actieprijs per stuk)
-  final String? oldPriceString;   // Oude prijs (bv. per m2)
-  final String? discountLabel;    // Kortingslabel
+  final String? priceString;          // Huidige prijs waarde
+  final String? priceUnit;            // Eenheid van hoofdprijs (bv. "/m²") - NIEUW
+  final String? oldPriceString;       // Oude prijs waarde
+  final String? discountLabel;        // Kortingslabel
   final String? promotionDescription;
-  final String? pricePerUnitString; // <-- NIEUW: Prijs per stuk/eenheid
+  final String? pricePerUnitString;   // Prijs per stuk/eenheid waarde
+  final String? pricePerUnitLabel;    // Label voor prijs per stuk (bv. "Per stuk") - NIEUW
 
   Product({
     required this.title,
@@ -19,14 +21,16 @@ class Product {
     this.imageUrl,
     this.productUrl,
     this.priceString,
+    this.priceUnit, // <-- Toevoegen
     this.oldPriceString,
     this.discountLabel,
     this.promotionDescription,
-    this.pricePerUnitString, // <-- Toevoegen aan constructor
+    this.pricePerUnitString,
+    this.pricePerUnitLabel, // <-- Toevoegen
   });
 
   @override
   String toString() {
-    return 'Product(title: $title, articleCode: $articleCode, eanCode: $eanCode, price: $priceString, oldPrice: $oldPriceString, pricePerUnit: $pricePerUnitString, discount: $discountLabel, promoDesc: $promotionDescription, imageUrl: $imageUrl, productUrl: $productUrl)';
+    return 'Product(title: $title, articleCode: $articleCode, eanCode: $eanCode, price: $priceString $priceUnit, oldPrice: $oldPriceString, pricePerUnit: $pricePerUnitString $pricePerUnitLabel, discount: $discountLabel, promoDesc: $promotionDescription, imageUrl: $imageUrl, productUrl: $productUrl)';
   }
 }
