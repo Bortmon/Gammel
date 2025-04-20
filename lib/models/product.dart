@@ -7,6 +7,9 @@ class Product {
   final String? imageUrl;
   final String? productUrl;
   final String? priceString;
+  final String? oldPriceString;
+  final String? discountLabel;
+  final String? promotionDescription; 
 
   Product({
     required this.title,
@@ -15,10 +18,13 @@ class Product {
     this.imageUrl,
     this.productUrl,
     this.priceString,
+    this.oldPriceString,
+    this.discountLabel,
+    this.promotionDescription, 
   });
 
   @override
   String toString() {
-    return 'Product(title: $title, articleCode: $articleCode, eanCode: $eanCode, price: $priceString, imageUrl: $imageUrl, productUrl: $productUrl)';
+    return 'Product(title: $title, articleCode: $articleCode, eanCode: $eanCode, price: $priceString, oldPrice: $oldPriceString, discount: $discountLabel, promoDesc: $promotionDescription, imageUrl: $imageUrl, productUrl: $productUrl)';
   }
 }
