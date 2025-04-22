@@ -8,12 +8,18 @@ import 'package:intl/intl.dart';
 import 'package:jwt_decoder/jwt_decoder.dart';
 import 'dart:convert';
 
+// --- BELANGRIJKE IMPORT VOOR LOKALISATIE ---
+import 'package:flutter_localizations/flutter_localizations.dart';
+// -------------------------------------------
+
 import 'models/login_result.dart';
-import 'screens/home_page.dart';
+import 'screens/home_page.dart'; // Zorg dat deze import correct is
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Stel default locale in (optioneel, maar goed voor consistentie)
   Intl.defaultLocale = 'nl_NL';
+  // Initialiseer date formatting voor de ingestelde locale
   await initializeDateFormatting(Intl.defaultLocale, null);
   runApp(const MyApp());
 }
@@ -37,10 +43,8 @@ class _MyAppState extends State<MyApp> {
   final String _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
-  // --- Kleuren (Voorbeeld Gamma Kleuren) ---
-  static const Color gammaBlue = Color(0xFF003366); // Donkerblauw
-  static const Color gammaOrange = Colors.orange; // Oranje accent
-  // -----------------------------------------
+  static const Color gammaBlue = Color(0xFF003366);
+  static const Color gammaOrange = Colors.orange;
 
   @override
   void initState() {
@@ -61,10 +65,10 @@ class _MyAppState extends State<MyApp> {
             _authToken = token; _employeeId = storedEmployeeId; _nodeId = storedNodeId; _isLoggedIn = true; _userName = storedUserName;
             print("[Auth] Loaded OK. User name from storage: $_userName");
           });
-          await _fetchUserProfile();
+          await _fetchUserProfile(); // Haal naam op na laden token
         } else {
            setState(() { _isLoggedIn = false; print("[Auth] Not found/incomplete."); });
-           if (token != null || storedEmployeeId != null || storedNodeId != null || storedUserName != null) { _logout(); }
+           if (token != null || storedEmployeeId != null || storedNodeId != null || storedUserName != null) { _logout(); } // Ruim eventuele restjes op
         }
       }
     } catch (e) { print("[Auth] Load Err: $e"); if (mounted) { setState(() { _isLoggedIn = false; }); } }
@@ -127,8 +131,8 @@ class _MyAppState extends State<MyApp> {
         try { final body = jsonDecode(response.body); token = body['access_token']; if (token != null && token.isNotEmpty) { try { Map<String, dynamic> jwt = JwtDecoder.decode(token); eId = jwt['EmployeeId'] as String?; nId = jwt['NodeId'] as String?; if (eId == null || nId == null) { print("[Auth] IDs missing."); _loginError = "Login OK, IDs?"; token = null; } else { print("[Auth] IDs OK."); } } catch (e) { print("[Auth] JWT Err: $e"); _loginError = "Login OK, token err."; token = null; } } else { print("[Auth] Token missing."); _loginError = "Login OK, token?"; } } catch (e) { print("[Auth] JSON Err: $e"); _loginError = "Login OK, data err."; }
         if (token != null && eId != null && nId != null) {
            print("[Auth] All OK. Storing basic auth data..."); await _storage.write(key: 'authToken', value: token); await _storage.write(key: 'employeeId', value: eId); await _storage.write(key: 'nodeId', value: nId);
-           setState(() { _authToken = token; _employeeId = eId; _nodeId = nId; _isLoggedIn = true; _loginError = null; _userName = null; });
-           await _fetchUserProfile();
+           setState(() { _authToken = token; _employeeId = eId; _nodeId = nId; _isLoggedIn = true; _loginError = null; _userName = null; }); // Reset userName, wordt opgehaald
+           await _fetchUserProfile(); // Haal naam op na succesvolle login
            success = true;
         }
       } else { String msg = "Login Err (${response.statusCode})"; try { final b = jsonDecode(response.body); msg = b['message'] ?? b['error_description'] ?? b['error'] ?? msg; } catch (e) { print("Err parsing login err: $e"); } _loginError = msg; }
@@ -142,23 +146,48 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+
      final baseLight=ThemeData.light(useMaterial3:true);final baseDark=ThemeData.dark(useMaterial3:true);
 
      // --- LICHT THEMA (Gamma Kleuren) ---
-     final lightCS=ColorScheme.fromSeed( seedColor: gammaBlue, brightness: Brightness.light, primary: gammaBlue, onPrimary: Colors.white, secondary: gammaOrange, onSecondary: Colors.black, surface: Colors.white, onSurface: Colors.black87, background: Colors.grey[100]!, onBackground: Colors.black87, error: Colors.redAccent[700]!, onError: Colors.white, surfaceContainer: Colors.grey[200]!, surfaceContainerHighest: Colors.grey[300]!, errorContainer: gammaOrange.withOpacity(0.15), onErrorContainer: gammaOrange ); // Error container voor actie label
-     final lightTheme=baseLight.copyWith(colorScheme:lightCS,scaffoldBackgroundColor:lightCS.background,appBarTheme:AppBarTheme(backgroundColor:lightCS.primary,foregroundColor:lightCS.onPrimary,elevation:1,iconTheme:IconThemeData(color:lightCS.onPrimary),actionsIconTheme:IconThemeData(color:lightCS.onPrimary)),cardTheme:CardTheme(elevation:1,margin:const EdgeInsets.symmetric(vertical:6.0,horizontal:0),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(8.0),side:BorderSide(color:Colors.grey[300]!,width:0.5)),color:lightCS.surface,surfaceTintColor:Colors.transparent),inputDecorationTheme:InputDecorationTheme(filled:true,fillColor:Colors.white,contentPadding:const EdgeInsets.symmetric(vertical:12.0,horizontal:16.0),border:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[400]!)),enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[400]!)),focusedBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:lightCS.primary,width:1.5)),labelStyle:TextStyle(color:Colors.grey[700]),prefixIconColor:Colors.grey[700],suffixIconColor:Colors.grey[700]),textTheme:baseLight.textTheme.apply(displayColor:Colors.black87,bodyColor:Colors.black87),dividerTheme:DividerThemeData(color:Colors.grey[300],thickness:0.8),chipTheme:ChipThemeData(backgroundColor:lightCS.secondaryContainer,labelStyle:TextStyle(color:lightCS.onSecondaryContainer),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(4.0)),side:BorderSide.none,padding:const EdgeInsets.symmetric(horizontal:8,vertical:4),));
+     final lightCS=ColorScheme.fromSeed( seedColor: gammaBlue, brightness: Brightness.light, primary: gammaBlue, onPrimary: Colors.white, secondary: gammaOrange, onSecondary: Colors.black, surface: Colors.white, onSurface: Colors.black87, background: Colors.grey[100]!, onBackground: Colors.black87, error: Colors.redAccent[700]!, onError: Colors.white, surfaceContainer: Colors.grey[200]!, surfaceContainerHighest: Colors.grey[300]!, errorContainer: gammaOrange.withOpacity(0.15), onErrorContainer: gammaOrange );
+     final lightTheme=baseLight.copyWith(colorScheme:lightCS,scaffoldBackgroundColor:lightCS.background,appBarTheme:AppBarTheme(backgroundColor:lightCS.primary,foregroundColor:lightCS.onPrimary,elevation:1,iconTheme:IconThemeData(color:lightCS.onPrimary),actionsIconTheme:IconThemeData(color:lightCS.onPrimary)),cardTheme:CardTheme(elevation:1,margin:const EdgeInsets.symmetric(vertical:6.0,horizontal:0),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(12.0),side:BorderSide(color:Colors.grey[300]!,width:0.5)),color:lightCS.surface,surfaceTintColor:Colors.transparent, clipBehavior: Clip.antiAlias),inputDecorationTheme:InputDecorationTheme(filled:true,fillColor:Colors.white,contentPadding:const EdgeInsets.symmetric(vertical:12.0,horizontal:16.0),border:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[400]!)),enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[400]!)),focusedBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:lightCS.primary,width:1.5)),labelStyle:TextStyle(color:Colors.grey[700]),prefixIconColor:Colors.grey[700],suffixIconColor:Colors.grey[700]),textTheme:baseLight.textTheme.apply(displayColor:Colors.black87,bodyColor:Colors.black87),dividerTheme:DividerThemeData(color:Colors.grey[300],thickness:0.8),chipTheme:ChipThemeData(backgroundColor:lightCS.secondaryContainer,labelStyle:TextStyle(color:lightCS.onSecondaryContainer),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(4.0)),side:BorderSide.none,padding:const EdgeInsets.symmetric(horizontal:8,vertical:4),));
      // --- EINDE LICHT THEMA ---
 
      // --- DONKER THEMA ---
-     final darkCS=ColorScheme.fromSeed(seedColor:const Color(0xFF75a7ff),brightness:Brightness.dark,surface:const Color(0xFF1F1F1F),primary:const Color(0xFF75a7ff),onPrimary:Colors.black,secondary:const Color(0xFFb8c7ff),onSecondary:Colors.black,surfaceVariant:const Color(0xFF3A3A3A),error:Colors.redAccent[100]!,onError:Colors.black,surfaceContainer:const Color(0xFF2A2A2A),surfaceContainerHighest:const Color(0xFF3A3A3A),onErrorContainer:Colors.black,errorContainer:Colors.orange[700]!); // Oranje voor actie label
-     final darkTheme=baseDark.copyWith(colorScheme:darkCS,scaffoldBackgroundColor:darkCS.surface,appBarTheme:AppBarTheme(backgroundColor:const Color(0xFF2B3035),foregroundColor:darkCS.onSurface,elevation:1,iconTheme:IconThemeData(color:darkCS.onSurface),actionsIconTheme:IconThemeData(color:darkCS.onSurface)),cardTheme:CardTheme(elevation:1,margin:const EdgeInsets.symmetric(vertical:6.0,horizontal:0),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(8.0),side:BorderSide(color:Colors.grey[800]!,width:0.5)),color:darkCS.surfaceContainer,surfaceTintColor:Colors.transparent),inputDecorationTheme:InputDecorationTheme(filled:true,fillColor:Colors.grey[850],contentPadding:const EdgeInsets.symmetric(vertical:12.0,horizontal:16.0),border:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide.none),enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[700]!)),focusedBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:darkCS.primary,width:1.5)),labelStyle:TextStyle(color:Colors.grey[400]),prefixIconColor:Colors.grey[400],suffixIconColor:Colors.grey[400]),textTheme:baseDark.textTheme.apply(bodyColor:Colors.grey[300],displayColor:Colors.white).copyWith(bodySmall:baseDark.textTheme.bodySmall?.copyWith(color:Colors.grey[500])),iconButtonTheme:IconButtonThemeData(style:IconButton.styleFrom(foregroundColor:darkCS.onSurface)),iconTheme:IconThemeData(color:darkCS.onSurface.withAlpha((255*0.8).round())),dividerTheme:DividerThemeData(color:Colors.grey[700],thickness:0.8),chipTheme:ChipThemeData(backgroundColor:darkCS.errorContainer,labelStyle:TextStyle(color:darkCS.onErrorContainer,fontWeight:FontWeight.bold),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(4.0)),side:BorderSide.none,padding:const EdgeInsets.symmetric(horizontal:8,vertical:4),));
+     final darkCS=ColorScheme.fromSeed(seedColor:const Color(0xFF75a7ff),brightness:Brightness.dark,surface:const Color(0xFF1F1F1F),primary:const Color(0xFF75a7ff),onPrimary:Colors.black,secondary:const Color(0xFFb8c7ff),onSecondary:Colors.black,surfaceVariant:const Color(0xFF3A3A3A),error:Colors.redAccent[100]!,onError:Colors.black,surfaceContainer:const Color(0xFF2A2A2A),surfaceContainerHighest:const Color(0xFF3A3A3A),onErrorContainer:Colors.black,errorContainer:Colors.orange[700]!);
+     final darkTheme=baseDark.copyWith(colorScheme:darkCS,scaffoldBackgroundColor:darkCS.surface,appBarTheme:AppBarTheme(backgroundColor:const Color(0xFF2B3035),foregroundColor:darkCS.onSurface,elevation:1,iconTheme:IconThemeData(color:darkCS.onSurface),actionsIconTheme:IconThemeData(color:darkCS.onSurface)),cardTheme:CardTheme(elevation:1,margin:const EdgeInsets.symmetric(vertical:6.0,horizontal:0),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(12.0),side:BorderSide(color:Colors.grey[800]!,width:0.5)),color:darkCS.surfaceContainer,surfaceTintColor:Colors.transparent, clipBehavior: Clip.antiAlias),inputDecorationTheme:InputDecorationTheme(filled:true,fillColor:Colors.grey[850],contentPadding:const EdgeInsets.symmetric(vertical:12.0,horizontal:16.0),border:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide.none),enabledBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:Colors.grey[700]!)),focusedBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(8.0),borderSide:BorderSide(color:darkCS.primary,width:1.5)),labelStyle:TextStyle(color:Colors.grey[400]),prefixIconColor:Colors.grey[400],suffixIconColor:Colors.grey[400]),textTheme:baseDark.textTheme.apply(bodyColor:Colors.grey[300],displayColor:Colors.white).copyWith(bodySmall:baseDark.textTheme.bodySmall?.copyWith(color:Colors.grey[500])),iconButtonTheme:IconButtonThemeData(style:IconButton.styleFrom(foregroundColor:darkCS.onSurface)),iconTheme:IconThemeData(color:darkCS.onSurface.withAlpha((255*0.8).round())),dividerTheme:DividerThemeData(color:Colors.grey[700],thickness:0.8),chipTheme:ChipThemeData(backgroundColor:darkCS.errorContainer,labelStyle:TextStyle(color:darkCS.onErrorContainer,fontWeight:FontWeight.bold),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(4.0)),side:BorderSide.none,padding:const EdgeInsets.symmetric(horizontal:8,vertical:4),));
      // --- EINDE DONKER THEMA ---
 
-     return MaterialApp(title:'Gammel',theme:lightTheme,darkTheme:darkTheme,themeMode:_themeMode,
+     return MaterialApp(
+       title:'Gammel',
+       theme:lightTheme,
+       darkTheme:darkTheme,
+       themeMode:_themeMode,
+
+       // --- LOKALISATIE TOEGEVOEGD ---
+       localizationsDelegates: const [
+         GlobalMaterialLocalizations.delegate,
+         GlobalWidgetsLocalizations.delegate,
+         GlobalCupertinoLocalizations.delegate,
+       ],
+       supportedLocales: const [
+         Locale('nl', 'NL'), // Nederlands
+         Locale('en', ''),   // Engels (fallback)
+       ],
+       // locale: const Locale('nl', 'NL'), // Optioneel: forceer Nederlands
+       // -----------------------------
+
        home: HomePage(
-         currentThemeMode:_themeMode, onThemeModeChanged:toggleThemeMode, isLoggedIn:_isLoggedIn,
-         authToken:_authToken, employeeId:_employeeId, nodeId:_nodeId, userName:_userName,
-         loginCallback:_showLoginDialog, logoutCallback:_logout,
+         currentThemeMode:_themeMode,
+         onThemeModeChanged:toggleThemeMode,
+         isLoggedIn:_isLoggedIn,
+         authToken:_authToken,
+         employeeId:_employeeId,
+         nodeId:_nodeId,
+         userName:_userName,
+         loginCallback:_showLoginDialog,
+         logoutCallback:_logout,
        ),
        debugShowCheckedModeBanner:false,
      );

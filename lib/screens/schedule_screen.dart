@@ -9,13 +9,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/login_result.dart';
 import '../models/work_shift.dart';
+import 'daily_schedule_screen.dart'; // <-- NIEUWE IMPORT
 
 class ScheduleScreen extends StatefulWidget {
   final String? authToken;
   final bool isLoggedIn;
   final String? employeeId;
   final String? nodeId;
-  final String? userName; // <-- Nieuwe parameter
+  final String? userName;
   final Future<LoginResult> Function(BuildContext context) loginCallback;
   final Future<void> Function() logoutCallback;
 
@@ -25,7 +26,7 @@ class ScheduleScreen extends StatefulWidget {
     required this.isLoggedIn,
     required this.employeeId,
     required this.nodeId,
-    required this.userName, // <-- Vereist maken
+    required this.userName,
     required this.loginCallback,
     required this.logoutCallback,
   });
@@ -44,7 +45,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   String? _localAuthToken;
   String? _localEmployeeId;
   String? _localNodeId;
-  String? _localUserName; // <-- Lokale state voor naam
+  String? _localUserName;
   Duration _totalWeekDuration = Duration.zero;
   Duration _totalBreakDuration = Duration.zero;
 
@@ -55,11 +56,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialiseer lokale state met widget props
     _localAuthToken = widget.authToken;
     _localEmployeeId = widget.employeeId;
     _localNodeId = widget.nodeId;
-    _localUserName = widget.userName; // <-- Initialiseer lokale naam
+    _localUserName = widget.userName;
 
     if (_localAuthToken != null && _localEmployeeId != null && _localNodeId != null) {
       _fetchSchedule();
@@ -82,19 +82,16 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     if (!mounted) return;
     if (res.success && res.employeeId != null && res.nodeId != null && res.authToken != null) {
       print("[Schedule] Login OK. Storing locally & Fetching...");
-      // Update lokale state (naam wordt in MyApp al geupdate en doorgegeven bij volgende build)
       setState(() {
         _localAuthToken = res.authToken;
         _localEmployeeId = res.employeeId;
         _localNodeId = res.nodeId;
-        // Wacht met _localUserName updaten tot de widget herbouwd is met nieuwe props
         _isLoading = true;
         _error = null;
       });
-      // Wacht kort op potentiële state update in parent voordat fetch start
       await Future.delayed(Duration(milliseconds: 50));
       if(mounted) {
-         _localUserName = widget.userName; // Update lokale naam met mogelijk nieuwe prop
+         _localUserName = widget.userName;
          await _fetchSchedule();
          _checkFutureWeeks();
       }
@@ -178,22 +175,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
           final List<WorkShift> newShiftsParsed = _parseShiftsFromData(data, nodes, depts, codes);
           List<WorkShift> finalShiftsToProcess = newShiftsParsed;
-          String jsonToSave = currentJson; // Standaard opslaan
+          String jsonToSave = currentJson;
 
-          // Vergelijk alleen als er oude data is
           if (previousJson != null && previousJson.isNotEmpty) {
              try {
                 final oldData = jsonDecode(previousJson);
+                // Gebruik dezelfde lookup maps voor oude data (aanname: deze veranderen niet vaak)
                 final List<WorkShift> oldShiftsParsed = _parseShiftsFromData(oldData, nodes, depts, codes);
                 final (mergedList, changes) = _compareAndMergeSchedules(oldShiftsParsed, newShiftsParsed);
                 finalShiftsToProcess = mergedList;
                 changesFoundThisWeek = changes;
-             } catch(e) { print("Err parsing/comparing old JSON for $storageKey: $e"); /* Fallback */ }
-              // Sla altijd de *nieuwe* (originele) JSON op
+             } catch(e) { print("Err parsing/comparing old JSON for $storageKey: $e"); }
               jsonToSave = currentJson;
           }
 
-          // Update UI en totalen alleen als gevraagd
           if (updateUiShifts && mounted) {
              setState(() { _shifts = finalShiftsToProcess; _error = null; });
              _calculateWeeklyTotals();
@@ -204,7 +199,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           await prefs.setString(storageKey, jsonToSave);
 
         } else { if (updateUiShifts && mounted) setState(() { _error = "Data err: not map."; }); }
-      } else { // Handle HTTP errors
+      } else {
          if (updateUiShifts && mounted) {
             if (response.statusCode == 401 || response.statusCode == 403) { setState(() { _error = "Sessie verlopen."; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; }); await widget.logoutCallback(); }
             else if (response.statusCode == 404) { setState(() { _error = "Rooster niet gevonden (404)."; _shifts=[]; _calculateWeeklyTotals();}); }
@@ -221,34 +216,52 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   void _goToPreviousWeek() { DateTime d=DateTime.utc(_currentYear).add(Duration(days:(_currentWeek-1)*7)); d=d.subtract(Duration(days:d.weekday-1)); DateTime p=d.subtract(const Duration(days:7)); setState((){_currentYear=p.year;_currentWeek=_isoWeekNumber(p);}); _fetchSchedule(); }
   void _goToNextWeek() { DateTime d=DateTime.utc(_currentYear).add(Duration(days:(_currentWeek-1)*7)); d=d.subtract(Duration(days:d.weekday-1)); DateTime n=d.add(const Duration(days:7)); setState((){_currentYear=n.year;_currentWeek=_isoWeekNumber(n);}); _fetchSchedule(); }
 
+  // --- NAVIGATIE METHODE NAAR DAGROOSTER ---
+  void _navigateToDailySchedule(BuildContext context, DateTime date) {
+    if (_localAuthToken == null || _localNodeId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Kan dagrooster niet openen: login gegevens missen.")),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DailyScheduleScreen(
+          authToken: _localAuthToken!,
+          nodeId: _localNodeId!,
+          selectedDate: date,
+          // userName: _localUserName, // Optioneel doorgeven
+        ),
+      ),
+    );
+  }
+  // -----------------------------------------
+
   Widget _buildWeekNavigator(BuildContext context) { final bool canNav=!_isLoading&&!_isCheckingFuture&&(_localAuthToken!=null); final txt=Theme.of(context).textTheme; final clr=Theme.of(context).colorScheme; return Padding( padding: const EdgeInsets.symmetric(vertical:8.0, horizontal:8.0), child: Material( color:clr.surfaceContainer, elevation:1, borderRadius:BorderRadius.circular(8), child: InkWell( borderRadius:BorderRadius.circular(8), onTap:null, child: Padding( padding:const EdgeInsets.symmetric(horizontal:8.0), child: Row( mainAxisAlignment:MainAxisAlignment.spaceBetween, children: [ IconButton(icon:const Icon(Icons.chevron_left), tooltip:'Vorige', onPressed:canNav?_goToPreviousWeek:null, color:canNav?clr.onSurface:Colors.grey,), GestureDetector(onTap:(){print("Week tap");}, child:Text('Wk $_currentWeek - $_currentYear', style:txt.titleMedium?.copyWith(fontWeight:FontWeight.bold),)), IconButton(icon:const Icon(Icons.chevron_right), tooltip:'Volgende', onPressed:canNav?_goToNextWeek:null, color:canNav?clr.onSurface:Colors.grey,), ], ),),),),); }
 
   Widget _buildTotalsDisplay(BuildContext context, TextTheme textTheme, ColorScheme colorScheme) { String formattedTotal = WorkShift.formatDuration(_totalWeekDuration); String formattedBreak = WorkShift.formatDuration(_totalBreakDuration); return Padding( padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 16.0), child: Card( elevation: 2, margin: EdgeInsets.zero, child: Padding( padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0), child: Row( mainAxisAlignment: MainAxisAlignment.center, children: [ Text( 'Totaal: ', style: textTheme.titleMedium, ), Text( formattedTotal, style: textTheme.titleMedium?.copyWith( fontWeight: FontWeight.bold, color: colorScheme.primary,), ), if (_totalBreakDuration > Duration.zero) Padding( padding: const EdgeInsets.only(left: 8.0), child: Text( '(Pauze: $formattedBreak)', style: textTheme.bodyMedium?.copyWith( color: textTheme.bodySmall?.color,), ), ), ], ), ), ), ); }
 
   @override Widget build(BuildContext context) {
-    // Probeer de naam te formatteren (Achternaam, Voornaam -> Voornaam Achternaam)
-    String displayTitle = 'Rooster'; // Fallback
+    String displayTitle = 'Rooster';
     if (_localUserName != null && _localUserName!.contains(',')) {
        final parts = _localUserName!.split(',');
        if (parts.length >= 2) {
           displayTitle = 'Rooster ${parts[1].trim()} ${parts[0].trim()}';
        } else {
-          displayTitle = 'Rooster ${_localUserName!}'; // Gebruik ongewijzigd als geen komma
+          displayTitle = 'Rooster ${_localUserName!}';
        }
     } else if (_localUserName != null) {
-        displayTitle = 'Rooster ${_localUserName!}'; // Gebruik als geen komma
+        displayTitle = 'Rooster ${_localUserName!}';
     }
-
 
     return Scaffold(
       appBar: AppBar(
-        // --- Titel Aangepast ---
         title: Text(displayTitle),
-        // ---------------------
         actions: [
           if (_isCheckingFuture) const Padding(padding: EdgeInsets.only(right: 8.0), child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))),
           IconButton(icon: const Icon(Icons.refresh), tooltip: 'Verversen', onPressed: (_isLoading || _isCheckingFuture || _localAuthToken == null) ? null : _fetchSchedule,),
-          if (_localAuthToken != null) IconButton(icon: const Icon(Icons.logout), tooltip: 'Uitloggen', onPressed: () async { await widget.logoutCallback(); if (mounted) { setState(() { _shifts = []; _error = "Uitgelogd."; _isLoading = false; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; _localUserName = null; /* Reset naam ook */ }); } },),
+          if (_localAuthToken != null) IconButton(icon: const Icon(Icons.logout), tooltip: 'Uitloggen', onPressed: () async { await widget.logoutCallback(); if (mounted) { setState(() { _shifts = []; _error = "Uitgelogd."; _isLoading = false; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; _localUserName = null; }); } },),
         ],
       ),
       body: Column(
@@ -280,6 +293,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     itemCount: _shifts.length,
                     itemBuilder: (context, index) {
                       final shift = _shifts[index];
+                      final shiftDate = shift.date; // Pak de datum voor navigatie
                       final bool showDateHeader = index == 0 || _shifts[index - 1].date.day != shift.date.day || _shifts[index-1].date.month != shift.date.month || _shifts[index-1].date.year != shift.date.year ;
 
                       Color? tileColor; IconData? leadingIcon; Color? leadingIconColor;
@@ -312,28 +326,55 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                           Text( shift.totalTimeDisplay, style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: trailingColor, decoration: itemDecoration),),
                       ], );
 
-                      return Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          if (showDateHeader) Padding( padding: EdgeInsets.only(top: (index == 0 ? 8.0 : 16.0), bottom: 8.0, left: 4.0), child: Text( '${shift.dayName} ${shift.formattedDateShort}', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary), ), ),
-                          Card( color: tileColor, margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 0), child: ListTile( contentPadding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-                              leading: leadingWidget,
-                              title: Text(shift.departmentName, style: textTheme.titleMedium?.copyWith(fontSize: 15, decoration: itemDecoration, color: itemColor)),
-                              subtitle: Padding( padding: const EdgeInsets.only(top: 4.0), child: Column( crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  if (leadingIcon != null) Padding( padding: const EdgeInsets.only(bottom: 3.0), child: Icon(leadingIcon, color: leadingIconColor, size: 16), ),
-                                  if (shift.isModified) ...[
-                                     if(shift.previousBreakDuration != null && shift.previousBreakDuration != shift.breakDuration) Text('Pauze was: ${WorkShift.formatDuration(shift.previousBreakDuration!)}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
-                                     if (shift.previousDepartmentName != null && shift.previousDepartmentName != shift.departmentName) Text('Afd. was: ${shift.previousDepartmentName!}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
-                                     const SizedBox(height: 4),
-                                  ],
-                                  Text(shift.nodeName, style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
-                                  Text('Type: ${shift.hourCodeName}', style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
-                                  if (shift.breakDuration > Duration.zero && !shift.isDeleted) Text('Pauze: ${shift.breakTimeDisplay}', style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
-                                ],),
+                      // --- WRAP DE KAART EN HEADER IN INKWELL ---
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (showDateHeader)
+                            InkWell( // Maak header klikbaar
+                              onTap: () => _navigateToDailySchedule(context, shiftDate),
+                              child: Padding(
+                                padding: EdgeInsets.only(top: (index == 0 ? 8.0 : 16.0), bottom: 8.0, left: 4.0),
+                                child: Text(
+                                  '${shift.dayName} ${shift.formattedDateShort}',
+                                  style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.primary),
+                                ),
                               ),
-                              trailing: trailingWidget,
-                              dense: true,
+                            ),
+                          InkWell( // Maak kaart klikbaar
+                            onTap: () => _navigateToDailySchedule(context, shiftDate),
+                            child: Card(
+                              color: tileColor,
+                              margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 0),
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                                leading: leadingWidget,
+                                title: Text(shift.departmentName, style: textTheme.titleMedium?.copyWith(fontSize: 15, decoration: itemDecoration, color: itemColor)),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4.0),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (leadingIcon != null) Padding( padding: const EdgeInsets.only(bottom: 3.0), child: Icon(leadingIcon, color: leadingIconColor, size: 16), ),
+                                      if (shift.isModified) ...[
+                                         if(shift.previousBreakDuration != null && shift.previousBreakDuration != shift.breakDuration) Text('Pauze was: ${WorkShift.formatDuration(shift.previousBreakDuration!)}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+                                         if (shift.previousDepartmentName != null && shift.previousDepartmentName != shift.departmentName) Text('Afd. was: ${shift.previousDepartmentName!}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
+                                         const SizedBox(height: 4),
+                                      ],
+                                      Text(shift.nodeName, style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
+                                      Text('Type: ${shift.hourCodeName}', style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
+                                      if (shift.breakDuration > Duration.zero && !shift.isDeleted) Text('Pauze: ${shift.breakTimeDisplay}', style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
+                                    ],
+                                  ),
+                                ),
+                                trailing: trailingWidget,
+                                dense: true,
+                              ),
                             ),
                           ),
-                        ],);
+                          // ------------------------------------------
+                        ],
+                      );
                     },
                   ),
           ),

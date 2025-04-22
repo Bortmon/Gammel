@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' as dom;
 import 'dart:async';
+import 'dart:convert';
 
 import '../models/login_result.dart';
 import '../models/product.dart';
@@ -46,12 +47,28 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = false;
   String? _error;
   String _lastSearchTerm = '';
-  final String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+
+  // --- OPTIMALISATIE 3: Constanten en Final Regex ---
+  static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+  final RegExp _ean13Regex = RegExp(r'^[0-9]{13}$');
+  final RegExp _priceCleanRegex = RegExp(r'[^\d,.]');
+  final RegExp _promoDescCleanupRegex1 = RegExp(r'Bekijk alle producten.*$', multiLine: true);
+  final RegExp _promoDescCleanupRegex2 = RegExp(r'\s+');
+  // --- EINDE OPTIMALISATIE 3 ---
 
   @override
-  void initState() { super.initState(); _searchController.addListener(() { setState(() {}); }); }
+  void initState() {
+    super.initState();
+    // --- OPTIMALISATIE 2: Listener verwijderd, vervangen door ValueListenableBuilder in build() ---
+    // _searchController.addListener(() { setState(() {}); });
+    // --- EINDE OPTIMALISATIE 2 ---
+  }
+
   @override
-  void dispose() { _searchController.dispose(); super.dispose(); }
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   Future<void> _navigateToScanner() async {
     try {
@@ -62,7 +79,8 @@ class _HomePageState extends State<HomePage> {
         final Uri? uri = Uri.tryParse(scanResult);
         final bool isLikelyUrl = uri != null && uri.hasScheme && uri.hasAuthority;
         final bool isGammaProductUrl = isLikelyUrl && uri.host.endsWith('gamma.nl') && uri.pathSegments.contains('assortiment') && uri.pathSegments.contains('p') && uri.pathSegments.last.isNotEmpty;
-        final bool isEan13 = RegExp(r'^[0-9]{13}$').hasMatch(scanResult);
+        // Gebruik final regex hier
+        final bool isEan13 = _ean13Regex.hasMatch(scanResult);
 
         if (isGammaProductUrl) {
            print("[Navigation] Gamma Product URL gescand: $scanResult");
@@ -89,12 +107,22 @@ class _HomePageState extends State<HomePage> {
     if (query.isEmpty) return; FocusScope.of(context).unfocus(); setState(() { _isLoading = true; _error = null; _products = []; _lastSearchTerm = query; });
     final url = Uri.parse('https://www.gamma.nl/assortiment/zoeken?text=${Uri.encodeComponent(query)}');
     try {
+      // Gebruik static const user agent
       final response = await http.get(url, headers: {'User-Agent': _userAgent});
       if (!mounted) return;
       if (response.statusCode == 200) {
-        final document = parse(response.body);
+        // UTF-8 decoding
+        final responseBody = utf8.decode(response.bodyBytes);
+        final document = parse(responseBody);
+
         final List<Product> foundProducts = _parseProducts(document);
-        setState(() { _products = foundProducts; if (_products.isEmpty && _lastSearchTerm.isNotEmpty) { _error = 'Geen producten gevonden voor "$_lastSearchTerm".'; } _isLoading = false; });
+        setState(() {
+          _products = foundProducts;
+          if (_products.isEmpty && _lastSearchTerm.isNotEmpty) {
+             _error = 'Geen producten gevonden voor "$_lastSearchTerm".';
+          }
+          _isLoading = false;
+        });
       } else { setState(() { _error = 'Fout: Status ${response.statusCode}'; _isLoading = false; }); }
     } catch (e) { print('Error search results: $e'); if (!mounted) return; setState(() { _error = 'Fout: $e'; _isLoading = false; }); }
   }
@@ -106,7 +134,7 @@ class _HomePageState extends State<HomePage> {
 
     for (final element in productElements) {
       String? imageUrl; String? priceString; String? oldPriceString; String? discountLabel;
-      String? title = 'Titel?'; String? articleCode = 'Code?'; String? eanCode; String? productUrl;
+      String title = 'Titel?'; String articleCode = 'Code?'; String? eanCode; String? productUrl;
       String? promotionDescription; String? pricePerUnitString; String? priceUnit; String? pricePerUnitLabel;
 
       try {
@@ -114,10 +142,10 @@ class _HomePageState extends State<HomePage> {
         title = element.querySelector('div.product-tile-name a')?.text.trim() ?? element.querySelector('a.click-mask')?.attributes['title']?.trim() ?? 'Titel?';
         productUrl = element.querySelector('a.click-mask')?.attributes['href'];
         if (productUrl != null && !productUrl.startsWith('http')) { if (!productUrl.startsWith('/')) { productUrl = '/$productUrl'; } productUrl = 'https://www.gamma.nl$productUrl'; }
-        articleCode = element.attributes['data-objectid']?.trim();
-        if (articleCode != null && articleCode.isNotEmpty && articleCode.length > 1) { if (int.tryParse(articleCode.substring(0, 1)) == null) { articleCode = articleCode.substring(1); } }
+        articleCode = element.attributes['data-objectid']?.trim() ?? 'Code?';
+        if (articleCode != 'Code?' && articleCode.isNotEmpty && articleCode.length > 1) { if (int.tryParse(articleCode.substring(0, 1)) == null) { articleCode = articleCode.substring(1); } }
         eanCode = element.attributes['data-ean']?.trim();
-        if (articleCode == null || articleCode.isEmpty) { articleCode = eanCode ?? 'Code?'; eanCode = null; }
+        if (articleCode == 'Code?' && eanCode != null) { articleCode = eanCode; eanCode = null; }
         else if (eanCode == null || eanCode.isEmpty) { eanCode = null; }
 
         // Afbeelding
@@ -136,16 +164,49 @@ class _HomePageState extends State<HomePage> {
              final decimalElement = priceContainer.querySelector('.product-tile-price .product-tile-price-decimal');
              if (priceElement != null && decimalElement != null) { String intPart = priceElement.text.trim().replaceAll('.', ''); String decPart = decimalElement.text.trim(); if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; } }
              if (priceString == null) { priceString = element.attributes['data-price']?.trim(); }
-             final priceUnitElement = priceContainer.querySelector('.product-tile-price .product-tile-price-unit'); if (priceUnitElement != null) { priceUnit = priceUnitElement.text.trim(); if (priceUnit.isEmpty) priceUnit = null; }
+             final priceUnitElement = priceContainer.querySelector('.product-tile-price .product-tile-price-unit');
+             if (priceUnitElement != null) {
+               String tempUnit = priceUnitElement.text.trim();
+               if (tempUnit.isNotEmpty) {
+                  priceUnit = tempUnit.replaceAll('m²', 'm2');
+               }
+             }
              final oldPriceElem = priceContainer.querySelector('.product-tile-price-old .before-price') ?? priceContainer.querySelector('.product-tile-price-old span.before-price') ?? priceContainer.querySelector('span.product-tile-price-old');
-             if (oldPriceElem != null) { oldPriceString = oldPriceElem.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.'); if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; } }
-             final pricePerUnitElement = priceContainer.querySelector('.product-price-per-unit span:last-child'); if (pricePerUnitElement != null) { pricePerUnitString = pricePerUnitElement.text.trim().replaceAll(RegExp(r'[^\d,.]'), '').replaceFirst(',', '.'); if (pricePerUnitString.isEmpty) pricePerUnitString = null; }
+             if (oldPriceElem != null) {
+               String tempOldPriceText = oldPriceElem.text.trim();
+               if (tempOldPriceText.isNotEmpty) {
+                 // Gebruik final regex hier
+                 oldPriceString = tempOldPriceText.replaceAll(_priceCleanRegex, '').replaceFirst(',', '.');
+                 if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; }
+                 String? parentText = oldPriceElem.parent?.text;
+                 if (oldPriceString != null && priceUnit == null && parentText != null && parentText.contains('m²')) {
+                   priceUnit = '/m2';
+                 }
+               }
+             }
+             final pricePerUnitElement = priceContainer.querySelector('.product-price-per-unit span:last-child');
+              if (pricePerUnitElement != null) {
+                  String tempPPU = pricePerUnitElement.text.trim();
+                  if (tempPPU.isNotEmpty) {
+                      // Gebruik final regex hier
+                      pricePerUnitString = tempPPU.replaceAll(_priceCleanRegex, '').replaceFirst(',', '.');
+                      if (pricePerUnitString.isEmpty) pricePerUnitString = null;
+                  }
+              }
              final pricePerUnitLabelElement = priceContainer.querySelector('.product-price-per-unit span:first-child'); if (pricePerUnitLabelElement != null) { pricePerUnitLabel = pricePerUnitLabelElement.text.trim(); if (pricePerUnitLabel.isEmpty) pricePerUnitLabel = null; }
              discountLabel = priceContainer.querySelector('.promotion-text-label')?.text.trim();
              if (discountLabel == null || discountLabel.isEmpty) { final sticker = element.querySelector('span.sticker.promo, img.sticker.promo'); if (sticker != null) { discountLabel = sticker.attributes['alt']?.trim(); } }
              if (discountLabel == null || discountLabel.isEmpty) { final badge = element.querySelector('.product-tile-badge'); if (badge != null) { discountLabel = badge.text.trim();} }
              if (discountLabel == null || discountLabel.isEmpty) { final loyaltyLabel = priceContainer.querySelector('div.product-loyalty-label') ?? element.querySelector('dt.product-loyalty-label'); if (loyaltyLabel != null && loyaltyLabel.text.contains("Voordeelpas")) { discountLabel = "Voordeelpas"; final promoLabelDiv = element.querySelector('dt.promotion-info-label div div'); if (promoLabelDiv != null) { String promoText = promoLabelDiv.text.trim(); if(promoText.isNotEmpty) discountLabel = promoText; } } }
-             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description'); if (promoDescElement != null) { promotionDescription = promoDescElement.text.trim().replaceAll(RegExp(r'Bekijk alle producten.*$', multiLine: true), '').replaceAll(RegExp(r'\s+'), ' ').trim(); if (promotionDescription.isEmpty) promotionDescription = null; }
+             final promoDescElement = priceContainer.querySelector('.promotion-info-description') ?? element.querySelector('dd.promotion-info-description');
+             if (promoDescElement != null) {
+                 // Gebruik final regex hier
+                 promotionDescription = promoDescElement.text.trim()
+                    .replaceAll(_promoDescCleanupRegex1, '') // Verwijder "Bekijk alle..."
+                    .replaceAll(_promoDescCleanupRegex2, ' ') // Vervang meerdere spaties door één
+                    .trim();
+                 if (promotionDescription.isEmpty) promotionDescription = null;
+             }
              if (discountLabel == null && oldPriceString != null && priceString != null && oldPriceString != priceString) { discountLabel = "Actie"; }
         } else { priceString = element.attributes['data-price']?.trim(); print("[Parser] Price container not found for: $title"); }
         if (discountLabel != null && discountLabel.isEmpty) discountLabel = null;
@@ -195,7 +256,38 @@ class _HomePageState extends State<HomePage> {
         child: Column(children: [
             Padding(
               padding: const EdgeInsets.only(bottom: 20.0),
-              child: TextField(controller: _searchController, decoration: InputDecoration(labelText: 'Zoek product of scan barcode', prefixIcon: const Icon(Icons.search), suffixIcon: _searchController.text.isNotEmpty ? IconButton(icon: const Icon(Icons.clear), onPressed: () { _searchController.clear(); setState(() { _products = []; _error = null; _lastSearchTerm = ''; }); },) : null,), onSubmitted: _searchProducts,),
+              // --- OPTIMALISATIE 2: TextField met ValueListenableBuilder ---
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  labelText: 'Zoek product of scan barcode',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _searchController,
+                    builder: (context, value, child) {
+                      // Bouw alleen het icoon opnieuw op basis van de textfield waarde
+                      return value.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchController.clear();
+                                // Expliciet resultaten resetten omdat listener weg is
+                                setState(() {
+                                  _products = [];
+                                  _error = null;
+                                  _lastSearchTerm = '';
+                                  // Focus eventueel weghalen als het toetsenbord open staat
+                                  // FocusScope.of(context).unfocus();
+                                });
+                              },
+                            )
+                          : const SizedBox.shrink(); // Geen icoon als het veld leeg is
+                    },
+                  ),
+                ),
+                onSubmitted: _searchProducts,
+              ),
+              // --- EINDE OPTIMALISATIE 2 ---
             ),
             Expanded(child: _buildResultsArea(),),
           ],),),);
@@ -225,19 +317,7 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Afbeelding
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8.0),
-                      child: Container(
-                        color: clr.surfaceContainer,
-                        width: 85, height: 85,
-                        child: p.imageUrl != null
-                            ? Image.network( p.imageUrl!, fit: BoxFit.contain,
-                                loadingBuilder: (ctx, child, pr) => pr == null ? child : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)),
-                                errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, color: clr.onSurfaceVariant, size: 30)),
-                              )
-                            : Center(child: Icon(Icons.image_not_supported_outlined, color: clr.onSurfaceVariant, size: 30)),
-                      ),
-                    ),
+                    ClipRRect( borderRadius: BorderRadius.circular(8.0), child: Container( color: clr.surfaceContainer, width: 85, height: 85, child: p.imageUrl != null ? Image.network( p.imageUrl!, fit: BoxFit.contain, loadingBuilder: (ctx, child, pr) => pr == null ? child : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)), errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, color: clr.onSurfaceVariant, size: 30)), ) : Center(child: Icon(Icons.image_not_supported_outlined, color: clr.onSurfaceVariant, size: 30)), ), ),
                     const SizedBox(width: 16),
                     // Tekstuele Info
                     Expanded(
@@ -253,48 +333,43 @@ class _HomePageState extends State<HomePage> {
                           const SizedBox(height: 10),
                           // Prijs & Korting Weergave
                           Row(
-                             crossAxisAlignment: CrossAxisAlignment.center,
-                             children: [
-                                if (p.priceString != null)
-                                  Flexible( child: RichText( text: TextSpan( style: txt.bodyLarge?.copyWith(color: clr.onSurface), children: [
-                                        if (p.oldPriceString != null) TextSpan( text: '€ ${p.oldPriceString}  ', style: TextStyle( decoration: TextDecoration.lineThrough, color: clr.onSurfaceVariant.withOpacity(0.8), fontSize: txt.bodyMedium?.fontSize ?? 14,), ),
-                                        TextSpan( text: '€ ${p.priceString}', style: TextStyle( fontSize: txt.titleLarge?.fontSize ?? 20, color: clr.secondary, fontWeight: FontWeight.bold,),), // Gebruik secundaire kleur
-                                        if (p.priceUnit != null) TextSpan( text: ' ${p.priceUnit}', style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant) )
-                                      ],),),)
-                                else Text('Prijs?', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
-                                const Spacer(), // Duwt label naar rechts
-
-                                // --- AANGEPASTE ACTIE KNOP/LABEL ---
-                                if (p.discountLabel != null)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      // Gebruik secundaire kleur in licht thema, oranje in donker thema
-                                      color: isDarkMode ? Colors.orange[700] : clr.secondary,
-                                      borderRadius: BorderRadius.circular(6.0),
-                                    ),
-                                    child: Text(
-                                      p.discountLabel!,
-                                      style: txt.labelSmall?.copyWith(
-                                        // Pas tekstkleur aan voor contrast
-                                        color: isDarkMode ? Colors.white : clr.onSecondary,
-                                        fontWeight: FontWeight.bold,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Hier nog steeds m² -> m2 replace (of verwijder als je m² wilt)
+                                  if (p.oldPriceString != null) Padding( padding: const EdgeInsets.only(bottom: 2.0), child: Text( '€ ${p.oldPriceString}${p.priceUnit ?? ""}', style: txt.bodyMedium?.copyWith( decoration: TextDecoration.lineThrough, color: clr.onSurfaceVariant.withOpacity(0.8), ), ), ),
+                                  if (p.priceString != null) Text( '€ ${p.priceString}${p.priceUnit ?? ""}', style: txt.titleLarge?.copyWith( color: clr.secondary, fontWeight: FontWeight.bold, height: 1.1, ), )
+                                  else Text('Prijs?', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
+                                  if (p.pricePerUnitString != null) Padding( padding: const EdgeInsets.only(top: 4.0), child: Text( '€ ${p.pricePerUnitString} ${p.pricePerUnitLabel ?? "p/st"}', style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w500), ), ),
+                                ],
+                              ),
+                              if (p.discountLabel != null)
+                                Flexible(
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 8.0),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: isDarkMode ? Colors.orange[700] : clr.primary,
+                                        borderRadius: BorderRadius.circular(6.0),
                                       ),
-                                      overflow: TextOverflow.ellipsis,
+                                      child: Text(
+                                        p.discountLabel!,
+                                        style: txt.labelMedium?.copyWith(
+                                          color: isDarkMode ? Colors.white : clr.onPrimary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
                                     ),
                                   ),
-                                // --- EINDE AANGEPASTE KNOP ---
-                              ],
-                          ),
-                          // Prijs per stuk (optioneel, hier niet getoond)
-                          if (p.pricePerUnitString != null && p.priceString != p.pricePerUnitString)
-                             Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Text(
-                                   '€ ${p.pricePerUnitString} ${p.pricePerUnitLabel ?? "p/st"}',
-                                   style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w500),
                                 ),
-                             ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
