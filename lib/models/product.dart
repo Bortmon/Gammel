@@ -1,18 +1,19 @@
 // lib/models/product.dart
 
-class Product {
+class Product
+{
   final String title;
   final String articleCode;
   final String? eanCode;
   final String? imageUrl;
   final String? productUrl;
-  final String? priceString;          // Huidige prijs waarde
-  final String? priceUnit;            // Eenheid van hoofdprijs (bv. "/m²") - NIEUW
-  final String? oldPriceString;       // Oude prijs waarde
-  final String? discountLabel;        // Kortingslabel
+  final String? priceString;
+  final String? priceUnit;
+  final String? oldPriceString;
+  final String? discountLabel;
   final String? promotionDescription;
-  final String? pricePerUnitString;   // Prijs per stuk/eenheid waarde
-  final String? pricePerUnitLabel;    // Label voor prijs per stuk (bv. "Per stuk") - NIEUW
+  final String? pricePerUnitString;
+  final String? pricePerUnitLabel;
 
   Product({
     required this.title,
@@ -21,16 +22,17 @@ class Product {
     this.imageUrl,
     this.productUrl,
     this.priceString,
-    this.priceUnit, // <-- Toevoegen
+    this.priceUnit,
     this.oldPriceString,
     this.discountLabel,
     this.promotionDescription,
     this.pricePerUnitString,
-    this.pricePerUnitLabel, // <-- Toevoegen
+    this.pricePerUnitLabel,
   });
 
   @override
-  String toString() {
+  String toString()
+  {
     return 'Product(title: $title, articleCode: $articleCode, eanCode: $eanCode, price: $priceString $priceUnit, oldPrice: $oldPriceString, pricePerUnit: $pricePerUnitString $pricePerUnitLabel, discount: $discountLabel, promoDesc: $promotionDescription, imageUrl: $imageUrl, productUrl: $productUrl)';
   }
 }
