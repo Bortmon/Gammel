@@ -1,5 +1,3 @@
-// lib/screens/home_page.dart
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:html/parser.dart' show parse;
@@ -9,14 +7,12 @@ import 'dart:convert';
 
 import '../models/login_result.dart';
 import '../models/product.dart';
-import 'product_details_screen.dart';
+import 'product_details/product_details_screen.dart';
 import 'schedule_screen.dart';
 import 'scanner_screen.dart';
 
 class HomePage extends StatefulWidget
 {
-  final ThemeMode currentThemeMode;
-  final VoidCallback onThemeModeChanged;
   final bool isLoggedIn;
   final String? authToken;
   final String? employeeId;
@@ -28,8 +24,6 @@ class HomePage extends StatefulWidget
   const HomePage(
   {
     super.key,
-    required this.currentThemeMode,
-    required this.onThemeModeChanged,
     required this.isLoggedIn,
     required this.authToken,
     required this.employeeId,
@@ -43,13 +37,17 @@ class HomePage extends StatefulWidget
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage>
-{
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   List<Product> _products = [];
   bool _isLoading = false;
   String? _error;
   String _lastSearchTerm = '';
+
+  late TabController _tabController;
+  final String _filterStoreIdHaarlem = '39';
+  final String _filterStoreNameHaarlem = 'Haarlem';
+  int _activeTabIndex = 0;
 
   static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
   final RegExp _ean13Regex = RegExp(r'^[0-9]{13}$');
@@ -61,16 +59,33 @@ class _HomePageState extends State<HomePage>
   void initState()
   {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) {
+        // Actie tijdens het wisselen van tab
+      } else {
+        if (mounted) {
+          setState(() {
+            _activeTabIndex = _tabController.index;
+            _products = [];
+            _error = null;
+          });
+          if (_searchController.text.isNotEmpty) {
+            _searchProducts(_searchController.text);
+          }
+        }
+      }
+    });
   }
 
   @override
   void dispose()
   {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
-  // Navigeert naar het scanner scherm en verwerkt het resultaat.
   Future<void> _navigateToScanner() async
   {
     try
@@ -84,7 +99,6 @@ class _HomePageState extends State<HomePage>
 
       if (scanResult != null && scanResult.isNotEmpty)
       {
-        print("[Navigation] Scan resultaat ontvangen: $scanResult");
         final Uri? uri = Uri.tryParse(scanResult);
         final bool isLikelyUrl = uri != null && uri.hasScheme && uri.hasAuthority;
         final bool isGammaProductUrl = isLikelyUrl &&
@@ -96,55 +110,43 @@ class _HomePageState extends State<HomePage>
 
         if (isGammaProductUrl)
         {
-           print("[Navigation] Gamma Product URL gescand: $scanResult");
            String productIdRaw = uri.pathSegments.last;
            String searchId = productIdRaw;
-           // Filter 'B' prefix van product ID indien aanwezig
            if (productIdRaw.isNotEmpty && (productIdRaw.startsWith('B') || productIdRaw.startsWith('b')) && productIdRaw.length > 1)
            {
              searchId = productIdRaw.substring(1);
-             print("[Navigation] Geëxtraheerde en gefilterde Product ID: $searchId");
            }
-           else
-           {
-             print("[Navigation] Geëxtraheerde Product ID (geen 'B' gefilterd): $searchId");
-           }
-           // Probeer te parsen naar int en terug naar string voor opschoning
            try
            {
              searchId = int.parse(searchId).toString();
-             print("[Navigation] Opgeschoonde ID voor zoeken: $searchId");
            }
            catch(e)
            {
-             print("[Navigation] Kon ID '$searchId' niet naar int parsen, gebruik origineel (na B filter).");
+            // no-op
            }
            _searchController.text = searchId;
            _searchProducts(searchId);
         }
         else if (isEan13)
         {
-           print("[Navigation] EAN13 gescand: $scanResult. Start zoekopdracht...");
            _searchController.text = scanResult;
            _searchProducts(scanResult);
         }
         else
         {
-           print("[Navigation] Onbekend scan resultaat formaat: $scanResult");
            _searchController.text = scanResult;
-           ScaffoldMessenger.of(context).showSnackBar(
-             SnackBar(content: Text('Onbekend code formaat gescand: $scanResult')),
-           );
+           if (mounted)
+           {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Onbekend code formaat gescand: $scanResult')),
+            );
+           }
            setState(()
            {
              _products = [];
              _error = null;
            });
         }
-      }
-      else
-      {
-        print("Scanner gesloten zonder resultaat.");
       }
     }
     catch (e)
@@ -158,10 +160,17 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  // Zoekt naar producten op gamma.nl op basis van de query.
   Future<void> _searchProducts(String query) async
   {
-    if (query.isEmpty) return;
+    if (query.isEmpty)
+    {
+      setState(() {
+        _products = [];
+        _error = null;
+        _lastSearchTerm = '';
+      });
+      return;
+    }
     FocusScope.of(context).unfocus();
     setState(()
     {
@@ -171,8 +180,15 @@ class _HomePageState extends State<HomePage>
       _lastSearchTerm = query;
     });
 
-    final url = Uri.parse('https://www.gamma.nl/assortiment/zoeken?text=${Uri.encodeComponent(query)}');
-    print("[Search] Fetching: $url");
+    String urlString = 'https://www.gamma.nl/assortiment/zoeken?text=${Uri.encodeComponent(query)}';
+    bool isFilteredSearch = false;
+
+    if (_activeTabIndex == 1) {
+      urlString += '&f_storeUidAvailability=$_filterStoreIdHaarlem';
+      isFilteredSearch = true;
+    }
+
+    final Uri url = Uri.parse(urlString);
 
     try
     {
@@ -190,7 +206,7 @@ class _HomePageState extends State<HomePage>
           _products = foundProducts;
           if (_products.isEmpty && _lastSearchTerm.isNotEmpty)
           {
-             _error = 'Geen producten gevonden voor "$_lastSearchTerm".';
+             _error = 'Geen producten gevonden voor "$_lastSearchTerm"${isFilteredSearch ? " (op voorraad in $_filterStoreNameHaarlem)" : ""}.';
           }
           _isLoading = false;
         });
@@ -206,7 +222,6 @@ class _HomePageState extends State<HomePage>
     }
     catch (e)
     {
-      print('Error fetching search results: $e');
       if (!mounted) return;
       setState(()
       {
@@ -216,12 +231,10 @@ class _HomePageState extends State<HomePage>
     }
   }
 
- // Parset de HTML van de zoekresultatenpagina om productinformatie te extraheren.
  List<Product> _parseProducts(dom.Document document)
  {
     final products = <Product>[];
     final productElements = document.querySelectorAll('article.js-product-tile');
-    print("[Parser] Found ${productElements.length} product tiles.");
 
     for (final element in productElements)
     {
@@ -244,11 +257,13 @@ class _HomePageState extends State<HomePage>
         productUrl = element.querySelector('a.click-mask')?.attributes['href'];
         if (productUrl != null && !productUrl.startsWith('http'))
         {
-          if (!productUrl.startsWith('/')) { productUrl = '/$productUrl'; }
+          if (!productUrl.startsWith('/'))
+          {
+              productUrl = '/$productUrl';
+          }
           productUrl = 'https://www.gamma.nl$productUrl';
         }
         articleCode = element.attributes['data-objectid']?.trim() ?? 'Code?';
-        // Verwijder eventuele letter prefix van artikelcode
         if (articleCode != 'Code?' && articleCode.isNotEmpty && articleCode.length > 1)
         {
           if (int.tryParse(articleCode.substring(0, 1)) == null)
@@ -257,7 +272,6 @@ class _HomePageState extends State<HomePage>
           }
         }
         eanCode = element.attributes['data-ean']?.trim();
-        // Fallback: als artikelcode ontbreekt maar EAN wel, gebruik EAN als artikelcode
         if (articleCode == 'Code?' && eanCode != null)
         {
           articleCode = eanCode;
@@ -293,15 +307,24 @@ class _HomePageState extends State<HomePage>
              {
                String intPart = priceElement.text.trim().replaceAll('.', '');
                String decPart = decimalElement.text.trim();
-               if (intPart.isNotEmpty && decPart.isNotEmpty) { priceString = '$intPart.$decPart'; }
+               if (intPart.isNotEmpty && decPart.isNotEmpty)
+               {
+                   priceString = '$intPart.$decPart';
+               }
              }
-             if (priceString == null) { priceString = element.attributes['data-price']?.trim(); }
+             if (priceString == null)
+             {
+                 priceString = element.attributes['data-price']?.trim();
+             }
 
              final priceUnitElement = priceContainer.querySelector('.product-tile-price .product-tile-price-unit');
              if (priceUnitElement != null)
              {
                String tempUnit = priceUnitElement.text.trim();
-               if (tempUnit.isNotEmpty) { priceUnit = tempUnit.replaceAll('m²', 'm2'); }
+               if (tempUnit.isNotEmpty)
+               {
+                   priceUnit = tempUnit.replaceAll('m²', 'm2');
+               }
              }
 
              final oldPriceElem = priceContainer.querySelector('.product-tile-price-old .before-price') ?? priceContainer.querySelector('.product-tile-price-old span.before-price') ?? priceContainer.querySelector('span.product-tile-price-old');
@@ -311,8 +334,10 @@ class _HomePageState extends State<HomePage>
                if (tempOldPriceText.isNotEmpty)
                {
                  oldPriceString = tempOldPriceText.replaceAll(_priceCleanRegex, '').replaceFirst(',', '.');
-                 if (oldPriceString.isEmpty || oldPriceString == priceString) { oldPriceString = null; }
-                 // Check voor m² in parent als priceUnit nog niet gevonden is
+                 if (oldPriceString.isEmpty || oldPriceString == priceString)
+                 {
+                     oldPriceString = null;
+                 }
                  String? parentText = oldPriceElem.parent?.text;
                  if (oldPriceString != null && priceUnit == null && parentText != null && parentText.contains('m²'))
                  {
@@ -342,12 +367,18 @@ class _HomePageState extends State<HomePage>
              if (discountLabel == null || discountLabel.isEmpty)
              {
                final sticker = element.querySelector('span.sticker.promo, img.sticker.promo');
-               if (sticker != null) { discountLabel = sticker.attributes['alt']?.trim(); }
+               if (sticker != null)
+               {
+                   discountLabel = sticker.attributes['alt']?.trim();
+               }
              }
              if (discountLabel == null || discountLabel.isEmpty)
              {
                final badge = element.querySelector('.product-tile-badge');
-               if (badge != null) { discountLabel = badge.text.trim();}
+               if (badge != null)
+               {
+                   discountLabel = badge.text.trim();
+               }
              }
              if (discountLabel == null || discountLabel.isEmpty)
              {
@@ -374,7 +405,6 @@ class _HomePageState extends State<HomePage>
                  if (promotionDescription.isEmpty) promotionDescription = null;
              }
 
-             // Fallback: als er een oude prijs is, markeer als 'Actie'
              if (discountLabel == null && oldPriceString != null && priceString != null && oldPriceString != priceString)
              {
                discountLabel = "Actie";
@@ -383,7 +413,6 @@ class _HomePageState extends State<HomePage>
         else
         {
           priceString = element.attributes['data-price']?.trim();
-          print("[Parser] Price container not found for: $title");
         }
 
         if (discountLabel != null && discountLabel.isEmpty) discountLabel = null;
@@ -411,27 +440,22 @@ class _HomePageState extends State<HomePage>
         print("[Parser Results] Error parsing product tile: $e\nStack: $s");
       }
     }
-    print("[Parser] Parsed ${products.length} valid products.");
     return products;
   }
 
-  // Navigeert naar het detail scherm voor een specifiek product.
   Future<void> _navigateToDetails(BuildContext context, Product product) async
   {
     final result = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (context) => ProductDetailsScreen(product: product)),
     );
-    // Als er een barcode terugkomt van het detailscherm, zoek deze direct op.
     if (mounted && result != null && result.isNotEmpty)
     {
-      print("[Nav] Barcode '$result' received from details screen.");
       _searchController.text = result;
       _searchProducts(result);
     }
   }
 
-  // Navigeert naar het roosterschem.
   void _navigateToScheduleScreen(BuildContext context)
   {
     Navigator.push(
@@ -452,10 +476,11 @@ class _HomePageState extends State<HomePage>
   @override
   Widget build(BuildContext context)
   {
-    final bool isDark = Theme.of(context).brightness == Brightness.dark;
-    final IconData themeIcon = isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined;
+    final ColorScheme clr = Theme.of(context).colorScheme;
+    final TextTheme txt = Theme.of(context).textTheme;
 
     return Scaffold(
+      backgroundColor: clr.background,
       appBar: AppBar(
         title: const Text('Gammel'),
         actions:
@@ -466,42 +491,68 @@ class _HomePageState extends State<HomePage>
             onPressed: () => _navigateToScheduleScreen(context),
           ),
           IconButton(
-            icon: Icon(themeIcon),
-            tooltip: isDark ? 'Licht thema' : 'Donker thema',
-            onPressed: widget.onThemeModeChanged,
-          ),
-          IconButton(
             icon: const Icon(Icons.qr_code_scanner_outlined),
-            onPressed: () => _navigateToScanner(),
+            onPressed: _navigateToScanner,
             tooltip: 'Scan Barcode',
           ),
         ],
+        bottom: PreferredSize( // Om de TabBar een specifieke hoogte te geven indien nodig
+          preferredSize: const Size.fromHeight(48.0), // Standaard TabBar hoogte
+          child: Container( // Container voor eventuele achtergrond of rand
+            color: clr.surface, // Zelfde kleur als AppBar voor eenheid, of clr.background
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: clr.primary,
+              indicatorWeight: 3.0, // Dikkere indicator
+              indicatorSize: TabBarIndicatorSize.tab, // Indicator over de hele tab breedte
+              labelColor: clr.primary,
+              labelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.bold, fontSize: 15), // Grotere, vettere tab tekst
+              unselectedLabelColor: clr.onSurface.withAlpha(180),
+              unselectedLabelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.w500, fontSize: 15), // Grotere tekst ook voor inactief
+              tabs: [
+                const Tab(text: 'Algemeen'),
+                Tab(text: _filterStoreNameHaarlem),
+              ],
+            ),
+          ),
+        ),
       ),
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+        padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 0),
         child: Column(
           children:
           [
             Padding(
-              padding: const EdgeInsets.only(bottom: 20.0),
+              padding: const EdgeInsets.only(bottom: 16.0),
               child: TextField(
-                controller: _searchController,
+                 controller: _searchController,
+                style: txt.bodyLarge?.copyWith(color: clr.onSurface), // Duidelijkere tekst in zoekbalk
                 decoration: InputDecoration(
-                  labelText: 'Zoek product of scan barcode',
-                  prefixIcon: const Icon(Icons.search),
-                  // Gebruik ValueListenableBuilder om alleen het clear-icoon te updaten
+                  hintText: 'Zoek product of scan barcode', // Gebruik hintText
+                  // labelText: 'Zoek product of scan barcode', // Label kan weg als hintText er is
+                  prefixIcon: Icon(Icons.search, color: clr.onSurface.withAlpha(200)),
+                  fillColor: clr.surface, // Zelfde kleur als blokken/appbar
+                  filled: true, // Moet true zijn om fillColor te gebruiken
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0), // Grotere padding
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.0), // Rondere hoeken
+                    borderSide: BorderSide(color: clr.outline.withAlpha(80), width: 1.0), // Subtielere rand
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                    borderSide: BorderSide(color: clr.primary, width: 2.0),
+                  ),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
                     builder: (context, value, child)
                     {
                       return value.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear),
+                              icon: Icon(Icons.clear, color: clr.onSurface.withAlpha(200)),
                               tooltip: 'Wissen',
                               onPressed: ()
                               {
                                 _searchController.clear();
-                                // Reset state expliciet omdat de listener weg is
                                 setState(()
                                 {
                                   _products = [];
@@ -510,15 +561,169 @@ class _HomePageState extends State<HomePage>
                                 });
                               },
                             )
-                          : const SizedBox.shrink(); // Geen icoon als leeg
+                          : const SizedBox.shrink();
                     },
                   ),
                 ),
-                onSubmitted: _searchProducts, // Zoek bij 'Enter'
-              ),
+                onSubmitted: _searchProducts,
+               ),
             ),
             Expanded(
-              child: _buildResultsArea(), // Toon lader, error of resultaten
+              child: TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildResultsArea(),
+                  _buildResultsArea(),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      // FloatingActionButton is verwijderd
+    );
+  }
+
+  Widget _buildProductListItem(BuildContext context, Product product)
+  {
+    final TextTheme txt = Theme.of(context).textTheme;
+    final ColorScheme clr = Theme.of(context).colorScheme;
+
+    return InkWell(
+      onTap: () => _navigateToDetails(context, product),
+      borderRadius: BorderRadius.circular(16.0),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 8.0),
+        padding: const EdgeInsets.all(16.0),
+        decoration: BoxDecoration(
+          color: clr.surface,
+          borderRadius: BorderRadius.circular(16.0),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children:
+          [
+            Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                color: clr.background,
+                borderRadius: BorderRadius.circular(12.0),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12.0),
+                child: product.imageUrl != null
+                  ? Image.network(
+                      product.imageUrl!,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (ctx, child, pr) => pr == null
+                        ? child
+                        : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null, color: clr.primary)),
+                      errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, color: clr.onSurface.withAlpha(100), size: 35)),
+                    )
+                  : Center(child: Icon(Icons.image_not_supported_outlined, color: clr.onSurface.withAlpha(100), size: 35)),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children:
+                [
+                  Text(
+                    product.title,
+                    style: txt.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                      color: clr.onSurface,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Art: ${product.articleCode}',
+                    style: txt.bodySmall?.copyWith(color: clr.onSurface.withAlpha(180)),
+                  ),
+                  if (product.eanCode != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2.0),
+                      child: Text(
+                        'EAN: ${product.eanCode}',
+                        style: txt.bodySmall?.copyWith(color: clr.onSurface.withAlpha(160)),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children:
+                    [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (product.oldPriceString != null)
+                            Text(
+                              '€${product.oldPriceString}${product.priceUnit ?? ""}',
+                              style: txt.bodyMedium?.copyWith(
+                                decoration: TextDecoration.lineThrough,
+                                color: clr.onSurface.withAlpha(150),
+                                fontSize: 13,
+                              ),
+                            ),
+                          if (product.priceString != null)
+                            Text(
+                              '€${product.priceString}',
+                              style: txt.headlineSmall?.copyWith(
+                                color: clr.secondary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          else
+                            Text('Prijs onbekend', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic, color: clr.onSurface.withAlpha(150))),
+
+                          if (product.pricePerUnitString != null && product.priceString != product.pricePerUnitString)
+                             Padding(
+                               padding: const EdgeInsets.only(top: 2.0),
+                               child: Text(
+                                 '(€${product.pricePerUnitString} ${product.pricePerUnitLabel ?? "p/st"})',
+                                 style: txt.bodySmall?.copyWith(color: clr.onSurface.withAlpha(160), fontSize: 11),
+                               ),
+                             )
+                          else if (product.priceUnit != null && product.priceString != null)
+                             Padding(
+                               padding: const EdgeInsets.only(top: 2.0),
+                               child: Text(
+                                 product.priceUnit!,
+                                 style: txt.bodySmall?.copyWith(color: clr.onSurface.withAlpha(160), fontSize: 11),
+                               ),
+                             ),
+                        ],
+                      ),
+                      if (product.discountLabel != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: clr.primary,
+                            borderRadius: BorderRadius.circular(6.0),
+                          ),
+                          child: Text(
+                            product.discountLabel!,
+                            style: txt.labelSmall?.copyWith(
+                              color: clr.onPrimary,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -526,12 +731,10 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // Bouwt het gebied waar de zoekresultaten, lader of foutmelding wordt getoond.
   Widget _buildResultsArea()
   {
-    final txt = Theme.of(context).textTheme;
-    final clr = Theme.of(context).colorScheme;
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final TextTheme txt = Theme.of(context).textTheme;
+    final ColorScheme clr = Theme.of(context).colorScheme;
 
     if (_isLoading)
     {
@@ -553,152 +756,24 @@ class _HomePageState extends State<HomePage>
     else if (_products.isNotEmpty)
     {
       return ListView.builder(
-        padding: const EdgeInsets.only(top: 0, bottom: 16.0),
+        padding: const EdgeInsets.only(bottom: 16.0), // Geen extra padding meer voor FAB
         itemCount: _products.length,
         itemBuilder: (context, index)
         {
-          final p = _products[index];
-          return Card(
-            clipBehavior: Clip.antiAlias,
-            margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 0),
-            child: InkWell(
-              onTap: () => _navigateToDetails(context, p),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children:
-                  [
-                    // Afbeelding Kolom
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8.0),
-                      child: Container(
-                        color: clr.surfaceContainer, // Achtergrond voor afbeelding
-                        width: 85,
-                        height: 85,
-                        child: p.imageUrl != null
-                          ? Image.network(
-                              p.imageUrl!,
-                              fit: BoxFit.contain,
-                              loadingBuilder: (ctx, child, pr) => pr == null
-                                ? child
-                                : Center(child: CircularProgressIndicator(strokeWidth: 2.0, value: pr.expectedTotalBytes != null ? pr.cumulativeBytesLoaded / pr.expectedTotalBytes! : null)),
-                              errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, color: clr.onSurfaceVariant, size: 30)),
-                            )
-                          : Center(child: Icon(Icons.image_not_supported_outlined, color: clr.onSurfaceVariant, size: 30)), // Placeholder
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Tekst Info Kolom
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children:
-                        [
-                          Text(
-                            p.title,
-                            style: txt.titleMedium?.copyWith(height: 1.3, fontWeight: FontWeight.w600),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 6),
-                          Text('Art: ${p.articleCode}', style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant)),
-                          if (p.eanCode != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4.0),
-                              child: Text('EAN: ${p.eanCode}', style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant))
-                            ),
-                          const SizedBox(height: 10),
-                          Divider(height: 1, thickness: 0.5, color: clr.outlineVariant.withOpacity(0.5)),
-                          const SizedBox(height: 10),
-                          // Prijs & Korting Sectie
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children:
-                            [
-                              // Prijs details (links)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children:
-                                [
-                                  if (p.oldPriceString != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(bottom: 2.0),
-                                      child: Text(
-                                        '€ ${p.oldPriceString}${p.priceUnit ?? ""}',
-                                        style: txt.bodyMedium?.copyWith(
-                                          decoration: TextDecoration.lineThrough,
-                                          color: clr.onSurfaceVariant.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ),
-                                  if (p.priceString != null)
-                                    Text(
-                                      '€ ${p.priceString}${p.priceUnit ?? ""}',
-                                      style: txt.titleLarge?.copyWith(
-                                        color: clr.secondary, // Gebruik accentkleur voor prijs
-                                        fontWeight: FontWeight.bold,
-                                        height: 1.1,
-                                      ),
-                                    )
-                                  else
-                                    Text('Prijs onbekend', style: txt.bodyMedium?.copyWith(fontStyle: FontStyle.italic)),
-                                  if (p.pricePerUnitString != null)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 4.0),
-                                      child: Text(
-                                        '€ ${p.pricePerUnitString} ${p.pricePerUnitLabel ?? "p/st"}',
-                                        style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w500),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              // Kortingslabel (rechts)
-                              if (p.discountLabel != null)
-                                Flexible( // Voorkomt overflow als label te lang is
-                                  child: Padding(
-                                    padding: const EdgeInsets.only(left: 8.0),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: isDarkMode ? Colors.orange[700] : clr.primary, // Aparte kleur voor dark mode
-                                        borderRadius: BorderRadius.circular(6.0),
-                                      ),
-                                      child: Text(
-                                        p.discountLabel!,
-                                        style: txt.labelMedium?.copyWith(
-                                          color: isDarkMode ? Colors.white : clr.onPrimary,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
+          return _buildProductListItem(context, _products[index]);
         },
       );
     }
-    else // Geen producten gevonden of nog niet gezocht
+    else
     {
+       String message = _lastSearchTerm.isEmpty
+            ? ''
+            : 'Geen producten gevonden voor "$_lastSearchTerm"${_activeTabIndex == 1 ? " (op voorraad in $_filterStoreNameHaarlem)" : ""}.';
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: Text(
-            _lastSearchTerm.isEmpty
-              ? 'Zoek een product op naam, artikelnummer of EAN, of scan een barcode.'
-              : 'Geen producten gevonden voor "$_lastSearchTerm".',
+            message,
             textAlign: TextAlign.center,
             style: txt.bodyMedium,
           ),
