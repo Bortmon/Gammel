@@ -62,12 +62,14 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) {
-        // Actie tijdens het wisselen van tab
-      } else {
-        if (mounted) {
+        return; 
+      }
+      if (mounted) {
+        final newIndex = _tabController.index;
+        if (_activeTabIndex != newIndex) {
           setState(() {
-            _activeTabIndex = _tabController.index;
-            _products = [];
+            _activeTabIndex = newIndex;
+            _products = []; 
             _error = null;
           });
           if (_searchController.text.isNotEmpty) {
@@ -90,23 +92,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   {
     try
     {
-      final String? scanResult = await Navigator.push<String>(
+      final String? scanResultFromScanner = await Navigator.push<String>(
         context,
         MaterialPageRoute(builder: (context) => const ScannerScreen()),
       );
 
       if (!mounted) return;
 
-      if (scanResult != null && scanResult.isNotEmpty)
+      if (scanResultFromScanner != null && scanResultFromScanner.isNotEmpty)
       {
-        final Uri? uri = Uri.tryParse(scanResult);
+        String? searchTermForProducts;
+        final Uri? uri = Uri.tryParse(scanResultFromScanner);
         final bool isLikelyUrl = uri != null && uri.hasScheme && uri.hasAuthority;
         final bool isGammaProductUrl = isLikelyUrl &&
             uri.host.endsWith('gamma.nl') &&
             uri.pathSegments.contains('assortiment') &&
             uri.pathSegments.contains('p') &&
             uri.pathSegments.last.isNotEmpty;
-        final bool isEan13 = _ean13Regex.hasMatch(scanResult);
+        final bool isEan13 = _ean13Regex.hasMatch(scanResultFromScanner);
 
         if (isGammaProductUrl)
         {
@@ -116,33 +119,33 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
            {
              searchId = productIdRaw.substring(1);
            }
-           try
-           {
-             searchId = int.parse(searchId).toString();
-           }
-           catch(e)
-           {
-            // no-op
-           }
-           _searchController.text = searchId;
-           _searchProducts(searchId);
+           try { searchId = int.parse(searchId).toString(); } catch(e) { /* no-op */ }
+           searchTermForProducts = searchId;
         }
         else if (isEan13)
         {
-           _searchController.text = scanResult;
-           _searchProducts(scanResult);
+           searchTermForProducts = scanResultFromScanner;
         }
         else
         {
-           _searchController.text = scanResult;
+           searchTermForProducts = scanResultFromScanner;
            if (mounted)
            {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Onbekend code formaat gescand: $scanResult')),
+              SnackBar(content: Text('Onbekend code formaat gescand: $scanResultFromScanner')),
             );
            }
-           setState(()
-           {
+        }
+
+        if (searchTermForProducts != null) {
+          _searchController.text = searchTermForProducts;
+          if (_tabController.index != 0) {
+            _tabController.animateTo(0);
+          } else {
+            _searchProducts(searchTermForProducts);
+          }
+        } else {
+           setState(() {
              _products = [];
              _error = null;
            });
@@ -452,7 +455,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (mounted && result != null && result.isNotEmpty)
     {
       _searchController.text = result;
-      _searchProducts(result);
+      if (_tabController.index != 0) {
+        _tabController.animateTo(0); // Forceer naar Algemeen tab na scan vanuit details
+      } else {
+        _searchProducts(result);
+      }
     }
   }
 
@@ -496,19 +503,26 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             tooltip: 'Scan Barcode',
           ),
         ],
-        bottom: PreferredSize( // Om de TabBar een specifieke hoogte te geven indien nodig
-          preferredSize: const Size.fromHeight(48.0), // Standaard TabBar hoogte
-          child: Container( // Container voor eventuele achtergrond of rand
-            color: clr.surface, // Zelfde kleur als AppBar voor eenheid, of clr.background
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(kToolbarHeight - 8), // Iets compacter dan standaard
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+            decoration: BoxDecoration(
+                color: clr.surface.withAlpha(230), // Iets transparanter voor diepte
+                borderRadius: BorderRadius.circular(8.0)
+            ),
             child: TabBar(
               controller: _tabController,
-              indicatorColor: clr.primary,
-              indicatorWeight: 3.0, // Dikkere indicator
-              indicatorSize: TabBarIndicatorSize.tab, // Indicator over de hele tab breedte
+              indicator: BoxDecoration( // Gebruik BoxDecoration voor meer controle over indicator
+                  borderRadius: BorderRadius.circular(6.0),
+                  color: clr.primary.withOpacity(0.2) // Lichte highlight achtergrond
+              ),
+              indicatorPadding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 4.0),
+              indicatorSize: TabBarIndicatorSize.tab,
               labelColor: clr.primary,
-              labelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.bold, fontSize: 15), // Grotere, vettere tab tekst
-              unselectedLabelColor: clr.onSurface.withAlpha(180),
-              unselectedLabelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.w500, fontSize: 15), // Grotere tekst ook voor inactief
+              labelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.bold, fontSize: 14),
+              unselectedLabelColor: clr.onSurface.withOpacity(0.7),
+              unselectedLabelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.w500, fontSize: 14),
               tabs: [
                 const Tab(text: 'Algemeen'),
                 Tab(text: _filterStoreNameHaarlem),
@@ -526,21 +540,20 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               padding: const EdgeInsets.only(bottom: 16.0),
               child: TextField(
                  controller: _searchController,
-                style: txt.bodyLarge?.copyWith(color: clr.onSurface), // Duidelijkere tekst in zoekbalk
+                style: txt.bodyLarge?.copyWith(color: clr.onSurface),
                 decoration: InputDecoration(
-                  hintText: 'Zoek product of scan barcode', // Gebruik hintText
-                  // labelText: 'Zoek product of scan barcode', // Label kan weg als hintText er is
+                  hintText: 'Zoek product of scan barcode',
                   prefixIcon: Icon(Icons.search, color: clr.onSurface.withAlpha(200)),
-                  fillColor: clr.surface, // Zelfde kleur als blokken/appbar
-                  filled: true, // Moet true zijn om fillColor te gebruiken
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0), // Grotere padding
+                  fillColor: clr.surface,
+                  filled: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 20.0), // Meer verticale padding
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.0), // Rondere hoeken
-                    borderSide: BorderSide(color: clr.outline.withAlpha(80), width: 1.0), // Subtielere rand
+                    borderRadius: BorderRadius.circular(12.0),
+                    borderSide: BorderSide(color: clr.outline.withAlpha(100), width: 1.2), // Duidelijkere rand
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.0),
-                    borderSide: BorderSide(color: clr.primary, width: 2.0),
+                    borderSide: BorderSide(color: clr.primary, width: 2.2),
                   ),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
@@ -581,7 +594,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ],
         ),
       ),
-      // FloatingActionButton is verwijderd
     );
   }
 
@@ -756,7 +768,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     else if (_products.isNotEmpty)
     {
       return ListView.builder(
-        padding: const EdgeInsets.only(bottom: 16.0), // Geen extra padding meer voor FAB
+        padding: const EdgeInsets.only(bottom: 16.0),
         itemCount: _products.length,
         itemBuilder: (context, index)
         {
