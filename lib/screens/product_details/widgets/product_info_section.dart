@@ -40,7 +40,7 @@ class ProductInfoSection extends StatelessWidget
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
       decoration: BoxDecoration(
-        color: clr.surfaceContainerLow, // Subtiel andere achtergrond
+        color: clr.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12.0),
       ),
       child: Column(
@@ -57,13 +57,13 @@ class ProductInfoSection extends StatelessWidget
           [
             Text('Omschrijving', style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold, color: textTheme.titleLarge?.color)),
             const SizedBox(height: 10),
-            SelectableText(description!, style: textTheme.bodyLarge?.copyWith(height: 1.55, color: textTheme.bodyMedium?.color?.withOpacity(0.9))),
+            SelectableText(description!, style: textTheme.bodyLarge?.copyWith(height: 1.55, color: textTheme.bodyMedium?.color?.withAlpha((0.9 * 255).round()))),
             SizedBox(height: (hasDescription && hasSpecs) ? 24 : 8),
           ],
 
           if (hasDescription && hasSpecs) ...
           [
-            Divider(thickness: 0.5, color: clr.outlineVariant.withOpacity(0.5)),
+            Divider(thickness: 0.5, color: clr.outlineVariant.withAlpha((0.5 * 255).round())),
             const SizedBox(height: 24),
           ],
 
@@ -73,15 +73,15 @@ class ProductInfoSection extends StatelessWidget
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(14.0), // Iets meer padding
+              padding: const EdgeInsets.all(14.0),
               decoration: BoxDecoration(
-                color: clr.surfaceContainerLowest, // Nog subtieler voor de specs box zelf
+                color: clr.surfaceContainerLowest,
                 borderRadius: BorderRadius.circular(8.0),
-                border: Border.all(color: clr.outlineVariant.withOpacity(0.3), width: 0.7)
+                border: Border.all(color: clr.outlineVariant.withAlpha((0.3 * 255).round()), width: 0.7)
               ),
               child: SelectableText(
                 specifications!,
-                style: textTheme.bodyMedium?.copyWith(height: 1.6, fontFamily: 'monospace', color: textTheme.bodySmall?.color?.withOpacity(0.95)),
+                style: textTheme.bodyMedium?.copyWith(height: 1.6, fontFamily: 'monospace', color: textTheme.bodySmall?.color?.withAlpha((0.95 * 255).round())),
               )
             ),
              const SizedBox(height: 8),

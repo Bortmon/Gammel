@@ -1,28 +1,30 @@
-// lib/screens/daily_schedule_screen.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 
-// Model voor een dagelijkse dienst entry
+import '../widgets/custom_bottom_nav_bar.dart'; // Importeer de bottom nav bar
+import 'scanner_screen.dart'; // Voor navigatie
+// import 'zaag_tool_screen.dart'; // Als je die hebt
+import 'home_page.dart'; // Voor UnderConstructionScreen
+
 class DailyShiftEntry
 {
   final int id;
-  final String employeeId; // Nodig voor koppeling
+  final String employeeId;
   final String employeeFullName;
   final TimeOfDay startTime;
   final TimeOfDay endTime;
   final Duration breakDuration;
   final Duration totalDuration;
-  final String departmentName; // Afdeling van *deze* dienst
+  final String departmentName;
   final String hourCodeName;
   final bool isPresence;
   final String? functionCode;
-  // Extra velden voor details dialog
   final String? employeeTypeAbbr;
-  final double? workingHours; // Contracturen (in minuten)
-  final double? dailyHours;   // Gemiddelde daguren (in minuten)
-  final List<int> allowedDepartmentIds; // IDs van afdelingen waar men mag werken
+  final double? workingHours;
+  final double? dailyHours;
+  final List<int> allowedDepartmentIds;
 
   DailyShiftEntry(
   {
@@ -43,7 +45,6 @@ class DailyShiftEntry
     required this.allowedDepartmentIds,
   });
 
-  // --- Static Helper Functies ---
   static TimeOfDay _minutesToTimeOfDay(int m) => TimeOfDay(hour: m ~/ 60, minute: m % 60);
   static String formatTime(TimeOfDay time) => "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
   static String formatDuration(Duration duration)
@@ -53,14 +54,12 @@ class DailyShiftEntry
     return "${twoDigits(duration.inHours)}:$twoDigitMinutes";
   }
 
-  // Veilige parse functies
   static int? _parseInt(dynamic v)
   {
     if (v == null) return null;
     if (v is int) return v;
     if (v is String) return int.tryParse(v);
     if (v is num) return v.toInt();
-    print("Parse Int Error: Unexpected type ${v.runtimeType} for value $v");
     return null;
   }
   static double? _parseDouble(dynamic v)
@@ -70,7 +69,6 @@ class DailyShiftEntry
     if (v is int) return v.toDouble();
     if (v is String) return double.tryParse(v);
     if (v is num) return v.toDouble();
-    print("Parse Double Error: Unexpected type ${v.runtimeType} for value $v");
     return null;
   }
   static bool _parseBool(dynamic v)
@@ -86,11 +84,9 @@ class DailyShiftEntry
     if (v == null) return null;
     if (v is num) return v;
     if (v is String) return num.tryParse(v);
-    print("Parse Num Error: Unexpected type ${v.runtimeType} for value $v");
     return null;
   }
 
-  // --- Getters ---
   String get formattedWorkingHours
   {
     if (workingHours == null || workingHours! <= 0) return "N/B";
@@ -101,7 +97,6 @@ class DailyShiftEntry
   String get breakTimeDisplay => formatDuration(breakDuration);
   String get totalTimeDisplay => formatDuration(totalDuration);
 
-  // --- fromJson Factory ---
   static DailyShiftEntry? fromJson(
       Map<String, dynamic> entryData,
       String empId,
@@ -121,12 +116,10 @@ class DailyShiftEntry
       final int? cId = _parseInt(entryData['hourCodeId']);
       final num? bN = _parseNum(entryData['breakTime']);
       final num? tN = _parseNum(entryData['totalTime']);
-      // Aanwezigheid bepalen: via expliciet veld OF via aanwezigheidscode ID
       final bool isPres = _parseBool(entryData['isPresence']) || (cId != null && presenceCodeIds.contains(cId));
 
       if (entryId == null || sM == null || eM == null || dId == null || cId == null)
       {
-        print("DailyShiftEntry parse fail (basic fields missing/invalid): $entryData");
         return null;
       }
 
@@ -137,12 +130,10 @@ class DailyShiftEntry
       final String depN = allDepartments[dId.toString()]?['name'] ?? 'Afd $dId?';
       final String codeN = allHourCodes[cId.toString()]?['name'] ?? 'Type $cId?';
 
-      // Employee details ophalen
       final String employeeName = empDetails['text'] ?? 'Onbekende Medewerker ($empId)';
       final String? funcCode = empDetails['functionCode'];
       final String? empTypeAbbr = empDetails['employeeTypeAbbr'];
 
-      // Contract details ophalen (kunnen null zijn)
       final double? workHours = _parseDouble(contractDetails?['workingHours']);
       final double? dayHours = _parseDouble(contractDetails?['dailyHours']);
       final List<int> allowedDepts = (contractDetails?['employeeDepartments'] as List<dynamic>? ?? [])
@@ -171,7 +162,6 @@ class DailyShiftEntry
     }
     catch (e, s)
     {
-      print("DailyShiftEntry JSON parsing error: $e\nStacktrace: $s\nEntry data: $entryData");
       return null;
     }
   }
@@ -181,7 +171,7 @@ class DailyScheduleScreen extends StatefulWidget
 {
   final String authToken;
   final String nodeId;
-  final DateTime selectedDate; // Startdatum
+  final DateTime selectedDate;
 
   const DailyScheduleScreen(
   {
@@ -199,24 +189,17 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
 {
   bool _isLoading = true;
   String? _error;
-  List<dynamic> _displayItems = []; // Kan Strings (headers) of DailyShiftEntry bevatten
+  List<dynamic> _displayItems = [];
   Map<String, dynamic> _departments = {};
   Map<String, dynamic> _hourCodes = {};
   List<int> _presenceCodeIds = [];
   late DateTime _currentDate;
 
-  // Functiecodes die als 'Management' worden beschouwd
   final Set<String> _managementFunctionCodes = {'BM', 'ABM'};
-
-  // Handmatige mapping van medewerker naam naar cluster
-  // TODO: Overweeg dit extern te configureren of via API te verkrijgen indien mogelijk
   final Map<String, String> _employeeClusterMapping =
   {
-    // Management
     "Bakker, Jaimy": "Management",
     "Kliek, Twan": "Management",
-
-    // Voorcluster
     "Fiechter, Gertjan": "Voorcluster",
     "Bakker, Mandy": "Voorcluster",
     "Kamps, Karin": "Voorcluster",
@@ -224,8 +207,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     "Navrozoglou, Loukas": "Voorcluster",
     "Posch, Swen": "Voorcluster",
     "Hoogenboom, Thijs": "Voorcluster",
-
-    // Kassa/Balie
     "Sikman, Maxim": "Kassa/Balie",
     "Keijzer, Riley": "Kassa/Balie",
     "Diercks-van Bruggen, Pauline": "Kassa/Balie",
@@ -238,8 +219,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     "Nouland, Sofie, van den": "Kassa/Balie",
     "Nijland -  Kahmann, Sandra": "Kassa/Balie",
     "Wubbels -  Grimbergen, Eefje": "Kassa/Balie",
-
-    // Achtercluster
     "Adema, Jasper": "Achtercluster",
     "Oomkens, Laurens": "Achtercluster",
     "Zwart, Ricardo": "Achtercluster",
@@ -249,15 +228,13 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     "Blansch, Rene, Le": "Achtercluster",
     "Huijboom, Matteo": "Achtercluster",
   };
-
-  // Gewenste volgorde van de clusters in de UI
   final List<String> _clusterOrder =
   [
     "Management",
     "Voorcluster",
     "Kassa/Balie",
     "Achtercluster",
-    "Overige Medewerkers" // Fallback cluster
+    "Overige Medewerkers"
   ];
 
   final String _apiBaseUrl = 'https://server.manus.plus/intergamma/api/node/';
@@ -274,21 +251,17 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
   String _buildDailyScheduleUrl(String nodeId, DateTime date)
   {
     final formattedDate = DateFormat('yyyy-MM-dd').format(date);
-    // Haalt schedule op voor specifieke node en datum. departmentId=-1 voor alle afdelingen.
-    // scheduledOnly=false om ook niet-geplande (maar wel aanwezige) entries te zien.
     return '$_apiBaseUrl$nodeId/schedule/$formattedDate?departmentId=-1&scheduledOnly=false';
   }
 
   Future<void> _fetchDailySchedule() async
   {
-    print("[API Daily] Fetching schedule for $_currentDate");
     if (!mounted) return;
 
     setState(()
     {
       _isLoading = true;
       _error = null;
-      // Behoud oude items tijdens laden voor betere UX, tenzij er nog geen zijn.
       if (_displayItems.isEmpty)
       {
         _displayItems = [];
@@ -306,37 +279,32 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
           'Authorization': 'Bearer ${widget.authToken}',
           'User-Agent': _userAgent,
           'Accept': 'application/json',
-          'X-Application-Type': 'employee', // Belangrijk voor deze API endpoint
+          'X-Application-Type': 'employee',
           'Origin': 'https://ess.manus.plus',
           'Referer': 'https://ess.manus.plus/',
         },
       );
 
-      print("[API Daily] Status: ${response.statusCode} for $_currentDate");
       if (!mounted) return;
 
       if (response.statusCode >= 200 && response.statusCode < 300)
       {
-        // Gebruik utf8.decode om eventuele encoding issues te voorkomen
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         if (data is Map<String, dynamic>)
         {
-           print("[API Daily] Parsing data for $_currentDate");
           _parseAndGroupDailyData(data);
-           print("[API Daily] Finished parsing for $_currentDate");
         }
         else
         {
           setState(()
           {
             _error = "Ongeldige data ontvangen van server.";
-            _displayItems = []; // Leegmaken bij ongeldige data
+            _displayItems = [];
           });
         }
       }
       else
       {
-         // Probeer een specifiekere foutmelding te geven
          String errorMsg = "Fout bij ophalen (${response.statusCode})";
          try
          {
@@ -345,7 +313,7 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
          }
          catch (e)
          {
-           // Body was geen JSON of bevatte geen message
+            // no-op
          }
 
          if (response.statusCode == 401 || response.statusCode == 403)
@@ -363,19 +331,18 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
          setState(()
          {
            _error = errorMsg;
-           _displayItems = []; // Leegmaken bij fout
+           _displayItems = [];
          });
       }
     }
     catch (e, s)
     {
-      print('[API Daily] Network/Parsing Error: $e\n$s');
       if (mounted)
       {
         setState(()
         {
           _error = 'Netwerkfout of dataverwerkingsfout: $e';
-          _displayItems = []; // Leegmaken bij fout
+          _displayItems = [];
         });
       }
     }
@@ -387,16 +354,12 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
         {
           _isLoading = false;
         });
-         print("[API Daily] UI update finished for $_currentDate");
       }
     }
   }
 
-  // Verwerkt de ontvangen data en groepeert medewerkers per cluster
   void _parseAndGroupDailyData(Map<String, dynamic> data)
   {
-     print("[PARSE] Starting data parsing and grouping...");
-    // Haal de benodigde data secties op, met null checks
     final Map<String, dynamic> scheduleMap = data['schedule'] as Map<String, dynamic>? ?? {};
     final Map<String, dynamic> employeesMap = data['employees'] as Map<String, dynamic>? ?? {};
     final Map<String, dynamic> contractsMap = data['employeesContract'] as Map<String, dynamic>? ?? {};
@@ -408,54 +371,44 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
         .cast<int>()
         .toList();
 
-    // Initialiseer de map voor gegroepeerde entries gebaseerd op de gewenste volgorde
     final Map<String, List<DailyShiftEntry>> groupedEntries = {};
     for (var clusterName in _clusterOrder)
     {
       groupedEntries[clusterName] = [];
     }
-    // Zorg dat de fallback cluster altijd bestaat
     groupedEntries.putIfAbsent("Overige Medewerkers", () => []);
 
     int totalPresenceEntries = 0;
 
-    // Itereer over alle medewerkers in de response
     employeesMap.forEach((employeeId, employeeData)
     {
       if (employeeData is! Map<String, dynamic>)
       {
-         print("[PARSE] Skipping employeeId $employeeId: employeeData is not a Map.");
-         return; // Ga naar de volgende medewerker
+         return;
       }
 
       final scheduleInfo = scheduleMap[employeeId] as Map<String, dynamic>?;
       final contractInfo = contractsMap[employeeId] as Map<String, dynamic>?;
 
-      // Controleer of er rooster entries zijn voor deze medewerker
       if (scheduleInfo != null)
       {
         final List<dynamic>? entries = scheduleInfo['entries'] as List<dynamic>?;
 
         if (entries != null && entries.isNotEmpty)
         {
-          // Verwerk elke rooster entry voor de medewerker
           for (var entryItem in entries)
           {
              if (entryItem is Map<String, dynamic>)
              {
                 final entryData = entryItem;
-
-                // Probeer de entry te parsen naar een DailyShiftEntry object
                 final dailyEntry = DailyShiftEntry.fromJson(
                     entryData, employeeId, employeeData, contractInfo, _departments, _hourCodes, _presenceCodeIds);
 
-                // Voeg alleen toe als het een geldige entry is EN als het een aanwezigheidsdienst is
                 if (dailyEntry != null && dailyEntry.isPresence)
                 {
                   totalPresenceEntries++;
-                  String clusterName = "Overige Medewerkers"; // Default cluster
+                  String clusterName = "Overige Medewerkers"; 
 
-                  // Bepaal cluster: eerst op functiecode (management), dan op naam mapping
                   if (dailyEntry.functionCode != null && _managementFunctionCodes.contains(dailyEntry.functionCode))
                   {
                     clusterName = "Management";
@@ -464,31 +417,14 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
                   {
                     clusterName = _employeeClusterMapping[dailyEntry.employeeFullName]!;
                   }
-
-                  // Voeg toe aan de juiste cluster (maak aan indien niet in _clusterOrder)
-                  groupedEntries.putIfAbsent(clusterName, ()
-                  {
-                     print("[PARSE] Warning: Cluster '$clusterName' from mapping/function was not pre-initialized in _clusterOrder. Adding dynamically.");
-                     return [];
-                  }).add(dailyEntry);
-
+                  groupedEntries.putIfAbsent(clusterName, () => []).add(dailyEntry);
                 }
-                else if (dailyEntry == null)
-                {
-                   print("[PARSE] Failed to parse entry for employee $employeeId: $entryData");
-                }
-                // else: entry is not a presence entry, skip
-             }
-             else
-             {
-                print("[PARSE] Skipping entry for employee $employeeId: entry item is not a Map.");
              }
           }
         }
       }
     });
 
-    // Sorteer de entries binnen elke cluster op starttijd, dan op naam
     final sortLogic = (DailyShiftEntry a, DailyShiftEntry b)
     {
       int startComp = (a.startTime.hour * 60 + a.startTime.minute).compareTo(b.startTime.hour * 60 + b.startTime.minute);
@@ -497,46 +433,38 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     };
     groupedEntries.values.forEach((list) => list.sort(sortLogic));
 
-    // Bouw de uiteindelijke lijst voor de UI (_displayItems) op
     final List<dynamic> newDisplayItems = [];
-    // Voeg eerst clusters toe in de gedefinieerde volgorde
     for (var clusterName in _clusterOrder)
     {
        final entriesForCluster = groupedEntries[clusterName];
        if (entriesForCluster != null && entriesForCluster.isNotEmpty)
        {
-          newDisplayItems.add(clusterName); // Voeg header toe
-          newDisplayItems.addAll(entriesForCluster); // Voeg entries toe
+          newDisplayItems.add(clusterName);
+          newDisplayItems.addAll(entriesForCluster);
        }
     }
-    // Voeg eventuele overige (dynamisch gevonden) clusters toe aan het einde
     groupedEntries.forEach((clusterName, entries)
     {
        if (!_clusterOrder.contains(clusterName) && entries.isNotEmpty)
        {
-          print("[PARSE] Adding dynamically found cluster '$clusterName' to the end of the display list.");
           newDisplayItems.add(clusterName);
           newDisplayItems.addAll(entries);
        }
     });
 
-    // Update de state met de nieuwe lijst
     _displayItems = newDisplayItems;
 
-    // Update de error state als er geen entries zijn gevonden
     if (totalPresenceEntries == 0 && _error == null)
     {
        _error = 'Geen werkende collega\'s gevonden voor deze dag.';
     }
     else if (totalPresenceEntries > 0)
     {
-       // Verwijder de 'geen collega's' error als er nu wel collega's zijn (bv. na refresh)
        if (_error == 'Geen werkende collega\'s gevonden voor deze dag.')
        {
           _error = null;
        }
     }
-     print("[PARSE] Finished parsing and grouping. Display items count: ${_displayItems.length}");
   }
 
   void _goToPreviousDay()
@@ -559,28 +487,21 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
 
   Future<void> _selectDate(BuildContext context) async
   {
-     print("Opening DatePicker...");
     final DateTime? pickedDate = await showDatePicker(
       context: context,
       initialDate: _currentDate,
-      firstDate: DateTime(_currentDate.year - 2), // Sta 2 jaar terug toe
-      lastDate: DateTime(_currentDate.year + 2),  // Sta 2 jaar vooruit toe
-      locale: const Locale('nl', 'NL'), // Zorg voor flutter_localizations setup in main.dart!
+      firstDate: DateTime(_currentDate.year - 2),
+      lastDate: DateTime(_currentDate.year + 2),
+      locale: const Locale('nl', 'NL'),
     );
-     print("DatePicker closed. Picked date: $pickedDate");
 
     if (pickedDate != null && pickedDate != _currentDate)
     {
-       print("New date selected: $pickedDate. Updating state and fetching schedule...");
       setState(()
       {
         _currentDate = pickedDate;
       });
       _fetchDailySchedule();
-    }
-    else
-    {
-        print("Date selection cancelled or same date picked.");
     }
   }
 
@@ -589,12 +510,11 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
 
-    // Zoek de namen van toegestane afdelingen op
     final allowedDepartmentNames = entry.allowedDepartmentIds
         .map((id) => _departments[id.toString()]?['name'] as String?)
         .where((name) => name != null && name.isNotEmpty)
         .toList();
-    allowedDepartmentNames.sort(); // Sorteer alfabetisch
+    allowedDepartmentNames.sort();
 
     showDialog(
       context: context,
@@ -611,7 +531,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
                 if (entry.dailyHours != null && entry.dailyHours! > 0)
                    _buildDetailRow(Icons.hourglass_bottom_outlined, "Gem. daguren:", "${(entry.dailyHours! / 60.0).toStringAsFixed(1)} uur"),
                 const SizedBox(height: 10),
-                // Toon toegestane afdelingen alleen als ze er zijn
                 if (allowedDepartmentNames.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4.0),
@@ -626,7 +545,7 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
                   ),
                 if (allowedDepartmentNames.isNotEmpty)
                    Padding(
-                     padding: const EdgeInsets.only(left: 30.0), // Inspringen voor lijst
+                     padding: const EdgeInsets.only(left: 30.0),
                      child: Column(
                        crossAxisAlignment: CrossAxisAlignment.start,
                        children: allowedDepartmentNames.map((name) => Text(
@@ -648,13 +567,12 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
             ),
           ],
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-          backgroundColor: colorScheme.surfaceContainerHigh, // Iets lichtere achtergrond voor dialog
+          backgroundColor: colorScheme.surfaceContainerHigh,
         );
       },
     );
   }
 
-  // Helper widget voor een detail rij in de dialog
   Widget _buildDetailRow(IconData icon, String label, String value)
   {
     final textTheme = Theme.of(context).textTheme;
@@ -671,7 +589,7 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
             child: Text(
               value,
               style: textTheme.bodyMedium,
-              softWrap: true, // Zorgt voor tekst-terugloop indien nodig
+              softWrap: true,
             ),
           ),
         ],
@@ -679,18 +597,16 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     );
   }
 
-  // Bouwt de navigatiebalk voor dagen
   Widget _buildDayNavigator(BuildContext context)
   {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    // Formatteer de datum voor weergave (bv. "Ma 1 Jan 2024")
     final formattedDisplayDate = DateFormat('EEE d MMM yyyy', 'nl_NL').format(_currentDate);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 0),
       child: Material(
-        color: colorScheme.surfaceContainer, // Gebruik themakleur
+        color: colorScheme.surfaceContainer,
         elevation: 1,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
@@ -702,11 +618,9 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
               IconButton(
                 icon: const Icon(Icons.chevron_left),
                 tooltip: 'Vorige dag',
-                // Disable knop tijdens laden
                 onPressed: _isLoading ? null : _goToPreviousDay,
                 color: _isLoading ? Colors.grey : colorScheme.onSurface,
               ),
-              // Maak de datum klikbaar om de date picker te openen
               InkWell(
                  onTap: _isLoading ? null : () => _selectDate(context),
                  child: Padding(
@@ -728,7 +642,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
               IconButton(
                 icon: const Icon(Icons.chevron_right),
                 tooltip: 'Volgende dag',
-                // Disable knop tijdens laden
                 onPressed: _isLoading ? null : _goToNextDay,
                 color: _isLoading ? Colors.grey : colorScheme.onSurface,
               ),
@@ -739,10 +652,27 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
     );
   }
 
+  void _onBottomNavTabSelected(BottomNavTab tab) {
+    switch (tab) {
+      case BottomNavTab.agenda:
+        break;
+      case BottomNavTab.zaagtool:
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
+        break;
+      case BottomNavTab.scanner:
+         Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen())).then((scanResult) {
+            if (scanResult != null && scanResult is String && scanResult.isNotEmpty && mounted) {
+                Navigator.pop(context, scanResult);
+            }
+         });
+        break;
+    }
+  }
+
+
   @override
   Widget build(BuildContext context)
   {
-    // Formatteer datum voor de AppBar titel (bv. "Maandag 1 januari 2024")
     final String formattedAppBarDate = DateFormat('EEEE d MMMM yyyy', 'nl_NL').format(_currentDate);
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
@@ -755,7 +685,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
            IconButton(
              icon: const Icon(Icons.refresh),
              tooltip: 'Verversen',
-             // Disable knop tijdens laden
              onPressed: _isLoading ? null : _fetchDailySchedule,
            ),
         ],
@@ -763,26 +692,26 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
       body: Column(
          children:
          [
-           _buildDayNavigator(context), // De dag navigatie bovenaan
+           _buildDayNavigator(context),
            Expanded(
-             // Het gebied waar de lijst of de lader/error wordt getoond
              child: _buildListArea(context, textTheme, colorScheme),
            ),
          ],
       ),
+      bottomNavigationBar: CustomBottomNavBar(
+        currentTab: BottomNavTab.agenda,
+        onTabSelected: _onBottomNavTabSelected,
+      ),
     );
   }
 
- // Bouwt het hoofdgedeelte van de body: lijst, lader of foutmelding
  Widget _buildListArea(BuildContext context, TextTheme textTheme, ColorScheme colorScheme)
  {
-    // Toon lader alleen als we laden EN er nog geen items zijn
     if (_isLoading && _displayItems.isEmpty)
     {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Toon foutmelding als die er is
     if (_error != null)
     {
       return Center(
@@ -811,7 +740,6 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
       );
     }
 
-    // Toon melding als er geen items zijn (en niet aan het laden of error)
     if (_displayItems.isEmpty && !_isLoading)
     {
        return Center(
@@ -834,9 +762,8 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
        );
     }
 
-    // Toon de lijst met items (headers en entries)
     return RefreshIndicator(
-       onRefresh: _fetchDailySchedule, // Pull-to-refresh functionaliteit
+       onRefresh: _fetchDailySchedule,
        child: ListView.builder(
          padding: const EdgeInsets.fromLTRB(8.0, 8.0, 8.0, 8.0),
          itemCount: _displayItems.length,
@@ -844,30 +771,27 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
          {
            final item = _displayItems[index];
 
-           // Render Cluster Header (als item een String is)
            if (item is String)
            {
              return Padding(
                padding: EdgeInsets.only(
-                 top: index == 0 ? 0 : 16.0, // Extra ruimte boven headers, behalve de eerste
+                 top: index == 0 ? 0 : 16.0,
                  bottom: 8.0,
-                 left: 8.0, // Kleine indent voor header
+                 left: 8.0,
                ),
                child: Text(
-                 item, // Cluster naam
+                 item,
                  style: textTheme.titleMedium?.copyWith(
                    fontWeight: FontWeight.bold,
-                   color: colorScheme.primary, // Gebruik primaire kleur voor headers
+                   color: colorScheme.primary,
                  ),
                ),
              );
            }
-           // Render Rooster Entry (als item een DailyShiftEntry is)
            else if (item is DailyShiftEntry)
            {
              final entry = item;
 
-             // Widget voor de start- en eindtijd (links)
              Widget leadingWidget = Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -878,30 +802,27 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
                 ],
              );
 
-             // Widget voor de totale tijd en pauze (rechts)
              Widget trailingWidget = Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children:
                 [
-                  Text( entry.totalTimeDisplay, style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.secondary), ), // Gebruik secundaire kleur
-                  // Toon pauze alleen als deze groter is dan 0
+                  Text( entry.totalTimeDisplay, style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: colorScheme.secondary), ),
                   if (entry.breakDuration > Duration.zero)
                     Padding(
                       padding: const EdgeInsets.only(top: 2.0),
-                      child: Text( 'P: ${entry.breakTimeDisplay}', style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant), ), // Subtiele kleur voor pauze
+                      child: Text( 'P: ${entry.breakTimeDisplay}', style: textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant), ),
                     ),
                 ],
              );
 
-             // Maak de hele kaart klikbaar voor details
              return InkWell(
                onTap: () => _showEmployeeDetailsDialog(context, entry),
-               borderRadius: BorderRadius.circular(12.0), // Match Card shape
+               borderRadius: BorderRadius.circular(12.0),
                child: Card(
                  margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 0),
                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                 clipBehavior: Clip.antiAlias, // Voorkomt dat inhoud buiten de ronding valt
+                 clipBehavior: Clip.antiAlias,
                  child: ListTile(
                    contentPadding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
                    leading: leadingWidget,
@@ -909,19 +830,18 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
                    subtitle: Padding(
                      padding: const EdgeInsets.only(top: 4.0),
                      child: Text(
-                       entry.departmentName, // Toon afdeling als subtitel
+                       entry.departmentName,
                        style: textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                        maxLines: 1,
-                       overflow: TextOverflow.ellipsis, // Voorkom te lange afdelingsnamen
+                       overflow: TextOverflow.ellipsis,
                      ),
                    ),
                    trailing: trailingWidget,
-                   dense: true, // Maakt de ListTile iets compacter
+                   dense: true,
                  ),
                ),
              );
            }
-           // Fallback voor onverwachte item types (zou niet moeten gebeuren)
            return const SizedBox.shrink();
          },
        ),

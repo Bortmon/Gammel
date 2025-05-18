@@ -1,5 +1,3 @@
-// lib/screens/schedule_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:async';
@@ -10,6 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/login_result.dart';
 import '../models/work_shift.dart';
 import 'daily_schedule_screen.dart';
+import '../widgets/custom_bottom_nav_bar.dart';
+import 'scanner_screen.dart';
+import 'home_page.dart'; // Voor UnderConstructionScreen
 
 class ScheduleScreen extends StatefulWidget
 {
@@ -72,7 +73,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     }
   }
 
-  // Berekent het ISO weeknummer voor een gegeven datum.
   static int _isoWeekNumber(DateTime date)
   {
     int dayOfYear = int.parse(DateFormat("D", "en_US").format(date));
@@ -88,7 +88,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     return woy;
   }
 
-  // Toont de login dialoog en haalt data op na succesvolle login.
   Future<void> _promptLoginAndFetch() async
   {
     if (_isLoading || !mounted) return;
@@ -99,7 +98,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
 
     if (res.success && res.employeeId != null && res.nodeId != null && res.authToken != null)
     {
-      print("[Schedule] Login OK. Storing locally & Fetching...");
       setState(()
       {
         _localAuthToken = res.authToken;
@@ -107,10 +105,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
         _localNodeId = res.nodeId;
         _isLoading = true;
         _error = null;
-        // Haal eventueel bijgewerkte username op
         _localUserName = widget.userName;
       });
-      // Kleine delay om state update te laten verwerken voor fetch
       await Future.delayed(const Duration(milliseconds: 50));
       if(mounted)
       {
@@ -120,7 +116,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     }
     else
     {
-      print("[Schedule] Login Fail/Cancel: ${res.errorMessage}");
       setState(() { _error = res.errorMessage ?? "Login mislukt."; _isLoading = false; });
     }
   }
@@ -128,7 +123,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   String _buildScheduleUrl(String nId, String eId, int yr, int wk) =>
       '$_apiBaseUrl$nId/employee/$eId/schedule/$yr/$wk/fromData';
 
-  // Berekent de totale werk- en pauzeduur voor de weergegeven week.
   void _calculateWeeklyTotals()
   {
     Duration weekTotal = Duration.zero;
@@ -151,7 +145,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     }
   }
 
-  // Parset de lijst van WorkShift objecten uit de API response data.
   List<WorkShift> _parseShiftsFromData(dynamic scheduleData, Map<String, dynamic> nodes, Map<String, dynamic> depts, Map<String, dynamic> codes)
   {
       final List<WorkShift> parsedList = [];
@@ -178,7 +171,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
             }
             else if (pDate == null)
             {
-              print("[Parse] Skip day, date parse error: ${day['date']}");
+              // no-op
             }
           }
         }
@@ -186,7 +179,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       return parsedList;
   }
 
-  // Vergelijkt een oude lijst van shifts met een nieuwe lijst en markeert wijzigingen.
   (List<WorkShift>, bool) _compareAndMergeSchedules(List<WorkShift> oldShifts, List<WorkShift> newShifts)
   {
     final List<WorkShift> mergedList = [];
@@ -198,38 +190,30 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       final oldShift = oldShiftMap[newShift.uniqueIdentifier];
       if (oldShift != null)
       {
-        // Bestaande shift, check op wijzigingen
         if (newShift.hasChangedComparedTo(oldShift))
         {
-          print("[Compare] Shift changed: ${newShift.uniqueIdentifier}");
           mergedList.add(newShift.copyWithChangeInfo(changeType: ShiftChangeType.modified, previousShift: oldShift));
           changesFound = true;
         }
         else
         {
-          // Geen wijziging
           mergedList.add(newShift);
         }
-        oldShiftMap.remove(newShift.uniqueIdentifier); // Verwijder uit map om overgebleven (verwijderde) shifts te vinden
+        oldShiftMap.remove(newShift.uniqueIdentifier);
       }
       else
       {
-        // Nieuwe shift
-        print("[Compare] Shift added: ${newShift.uniqueIdentifier}");
         mergedList.add(newShift.copyWithChangeInfo(changeType: ShiftChangeType.added));
         changesFound = true;
       }
     }
 
-    // Resterende shifts in oldShiftMap zijn verwijderd
     if (oldShiftMap.isNotEmpty)
     {
-      print("[Compare] Shifts deleted: ${oldShiftMap.keys}");
       changesFound = true;
       mergedList.addAll(oldShiftMap.values.map((s) => s.copyWithChangeInfo(changeType: ShiftChangeType.deleted)));
     }
 
-    // Sorteer de uiteindelijke lijst op datum en starttijd
     mergedList.sort((a, b)
     {
       int d=a.date.compareTo(b.date);
@@ -242,7 +226,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     return (mergedList, changesFound);
   }
 
-  // Toont een SnackBar notificatie voor roosterwijzigingen.
   void _showChangeNotification(String message)
   {
      if (!mounted) return;
@@ -261,17 +244,14 @@ class _ScheduleScreenState extends State<ScheduleScreen>
      );
   }
 
-  // Controleert de komende weken op roosterwijzigingen op de achtergrond.
   Future<void> _checkFutureWeeks() async
   {
     if (_localEmployeeId == null || _localNodeId == null || _localAuthToken == null || _isCheckingFuture) return;
-    setState(() { _isCheckingFuture = true; });
-    print("[Schedule Check] Starting check for future weeks...");
+    if(mounted) setState(() { _isCheckingFuture = true; });
 
     List<Future<bool>> futureChecks = [];
-    // Bepaal de startdatum van de huidige week
     DateTime firstDayOfCurrentWeek = DateTime.utc(_currentYear).add(Duration(days: (_currentWeek - 1) * 7));
-    firstDayOfCurrentWeek = firstDayOfCurrentWeek.subtract(Duration(days: firstDayOfCurrentWeek.weekday - 1)); // Ga naar maandag
+    firstDayOfCurrentWeek = firstDayOfCurrentWeek.subtract(Duration(days: firstDayOfCurrentWeek.weekday - 1));
 
     for (int i = 1; i <= _numberOfFutureWeeksToCheck; i++)
     {
@@ -280,15 +260,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       int futureYear = firstDayOfFutureWeek.year;
       String url = _buildScheduleUrl(_localNodeId!, _localEmployeeId!, futureYear, futureWeek);
 
-      // Voeg een future toe die de fetch uitvoert en true/false retourneert bij wijziging/geen wijziging
       futureChecks.add(
         _executeFetch(url, _localAuthToken!, updateUiShifts: false, showNotificationOnChanges: false)
-          .then((changesFound) => changesFound ?? false) // Converteer null naar false
-          .catchError((e)
-          {
-            print("[Schedule Check] Error in _executeFetch for $futureYear/$futureWeek: $e");
-            return false; // Beschouw error als geen wijziging gevonden
-          })
+          .then((changesFound) => changesFound ?? false)
+          .catchError((e) => false)
       );
     }
 
@@ -297,17 +272,12 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       final List<bool> results = await Future.wait(futureChecks);
       if (mounted && results.any((changed) => changed))
       {
-        print("[Schedule Check] Changes detected in future weeks.");
         _showChangeNotification('Wijzigingen gevonden in toekomstige weken!');
-      }
-      else
-      {
-        print("[Schedule Check] No changes detected in future weeks.");
       }
     }
     catch (e)
     {
-      print("[Schedule Check] Error during Future.wait: $e");
+      // no-op
     }
     finally
     {
@@ -318,12 +288,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     }
   }
 
-  // Haalt het rooster op voor de huidige geselecteerde week.
   Future<void> _fetchSchedule() async
   {
     if (_localEmployeeId == null || _localNodeId == null || _localAuthToken == null)
     {
-      print("[API] Fetch abort: Local auth data missing.");
       if(mounted && _error == null)
       {
         setState((){_error = "Authenticatiegegevens missen."; _isLoading = false;});
@@ -335,26 +303,24 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       return;
     }
 
-    setState(()
-    {
-      _isLoading = true;
-      _error = null;
-      _shifts = []; // Leeg de lijst tijdens het laden
-      _totalWeekDuration = Duration.zero;
-      _totalBreakDuration = Duration.zero;
-    });
+    if(mounted) {
+      setState(()
+      {
+        _isLoading = true;
+        _error = null;
+        _shifts = [];
+        _totalWeekDuration = Duration.zero;
+        _totalBreakDuration = Duration.zero;
+      });
+    }
+
 
     final url = _buildScheduleUrl(_localNodeId!, _localEmployeeId!, _currentYear, _currentWeek);
-    print("[API] Fetching current week schedule: $url");
-    // Voer de daadwerkelijke fetch uit en update de UI
     await _executeFetch(url, _localAuthToken!, updateUiShifts: true, showNotificationOnChanges: true);
   }
 
-  // Voert de daadwerkelijke HTTP GET request uit en verwerkt de response.
-  // Kan optioneel de UI updaten en/of wijzigingen detecteren/melden.
   Future<bool?> _executeFetch(String url, String token, {bool updateUiShifts = true, bool showNotificationOnChanges = false}) async
   {
-    // Genereer een unieke key voor opslag gebaseerd op employee, jaar en week
     String storageKey = 'schedule_json_${_localEmployeeId}_${url.split('/schedule/')[1].replaceAll('/fromData', '').replaceAll('/', '_')}';
     SharedPreferences? prefs;
     bool changesFoundThisWeek = false;
@@ -362,7 +328,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     try
     {
       prefs = await SharedPreferences.getInstance();
-      final String? previousJson = prefs.getString(storageKey); // Haal vorige versie op
+      final String? previousJson = prefs.getString(storageKey);
 
       final response = await http.get(
         Uri.parse(url),
@@ -376,8 +342,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           'Referer': 'https://ess.manus.plus/'
         }
       );
-      print("[API] Status for $url: ${response.statusCode}");
-      if (!mounted) return null; // Stop als widget niet meer bestaat
+      if (!mounted) return null;
 
       if (response.statusCode >= 200 && response.statusCode < 300)
       {
@@ -386,104 +351,86 @@ class _ScheduleScreenState extends State<ScheduleScreen>
 
         if (data is Map<String, dynamic>)
         {
-          // Haal lookup data op (nodes, afdelingen, codes)
           final nodes = data['nodes'] as Map<String, dynamic>? ?? {};
           final depts = data['departments'] as Map<String, dynamic>? ?? {};
           final codes = data['hourCodes'] as Map<String, dynamic>? ?? {};
 
-          // Parse de nieuwe shifts
           final List<WorkShift> newShiftsParsed = _parseShiftsFromData(data, nodes, depts, codes);
           List<WorkShift> finalShiftsToProcess = newShiftsParsed;
-          String jsonToSave = currentJson; // JSON om op te slaan (standaard de nieuwe)
+          String jsonToSave = currentJson;
 
-          // Vergelijk met vorige versie indien beschikbaar
           if (previousJson != null && previousJson.isNotEmpty)
           {
              try
              {
                 final oldData = jsonDecode(previousJson);
-                // Gebruik dezelfde lookup maps voor oude data
                 final List<WorkShift> oldShiftsParsed = _parseShiftsFromData(oldData, nodes, depts, codes);
-                // Vergelijk en merge de lijsten
                 final (mergedList, changes) = _compareAndMergeSchedules(oldShiftsParsed, newShiftsParsed);
-                finalShiftsToProcess = mergedList; // Gebruik de gemergede lijst
-                changesFoundThisWeek = changes; // Onthoud of er wijzigingen waren
+                finalShiftsToProcess = mergedList;
+                changesFoundThisWeek = changes;
              }
              catch(e)
              {
-               print("Error parsing/comparing old JSON for $storageKey: $e");
-               // Bij fout, gebruik gewoon de nieuwe data en sla die op
+                // no-op
              }
-              // Sla altijd de *nieuwste* JSON op, ongeacht vergelijkingsfouten
               jsonToSave = currentJson;
           }
 
-          // Update de UI indien nodig
           if (updateUiShifts && mounted)
           {
              setState(() { _shifts = finalShiftsToProcess; _error = null; });
-             _calculateWeeklyTotals(); // Herbereken totalen
-             // Toon notificatie indien nodig
+             _calculateWeeklyTotals();
              if(showNotificationOnChanges && changesFoundThisWeek)
              {
                 _showChangeNotification("Wijzigingen in week $_currentWeek gevonden!");
              }
           }
-          // Sla de (nieuwe) JSON op voor toekomstige vergelijking
           await prefs.setString(storageKey, jsonToSave);
 
         }
         else
         {
-          // Ongeldig data formaat
           if (updateUiShifts && mounted) setState(() { _error = "Ongeldig data formaat ontvangen."; });
         }
       }
       else
       {
-         // Handel HTTP fouten af
          if (updateUiShifts && mounted)
          {
             if (response.statusCode == 401 || response.statusCode == 403)
             {
-              // Authenticatie fout -> uitloggen
               setState(() { _error = "Sessie verlopen. Log opnieuw in."; _localAuthToken = null; _localEmployeeId = null; _localNodeId = null; });
               await widget.logoutCallback();
             }
             else if (response.statusCode == 404)
             {
-              // Rooster niet gevonden
               setState(() { _error = "Rooster niet gevonden voor deze week (404)."; _shifts=[]; _calculateWeeklyTotals();});
             }
             else if (response.statusCode == 500)
             {
-              // Server fout (vaak bij nog niet ingepland)
               setState(() { _error = "Serverfout (500). Mogelijk nog niet ingepland?"; _shifts=[]; _calculateWeeklyTotals();});
             }
             else
             {
-              // Andere HTTP fout
               String msg = "Fout bij ophalen (${response.statusCode})";
-              try { final b = jsonDecode(response.body); msg = b['message'] ?? msg; } catch (e) {}
+              try { final b = jsonDecode(response.body); msg = b['message'] ?? msg; } catch (e) { /* no-op */ }
               setState(() { _error = msg; });
             }
          }
-         changesFoundThisWeek = false; // Geen wijzigingen bij fout
+         changesFoundThisWeek = false;
       }
-      return changesFoundThisWeek; // Retourneer of er wijzigingen waren
+      return changesFoundThisWeek;
     }
     catch (e, s)
     {
-      print('[API] Network/Parsing Error for $url: $e\n$s');
       if (updateUiShifts && mounted)
       {
         setState(() { _error = (e is FormatException) ? 'Fout bij verwerken data.' : 'Netwerkfout: $e'; });
       }
-      return false; // Geen wijzigingen bij fout
+      return false;
     }
     finally
     {
-      // Zorg dat loading state altijd gereset wordt als we de UI updaten
       if (updateUiShifts && mounted)
       {
         setState(() { _isLoading = false; });
@@ -494,7 +441,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   void _goToPreviousWeek()
   {
     DateTime d=DateTime.utc(_currentYear).add(Duration(days:(_currentWeek-1)*7));
-    d=d.subtract(Duration(days:d.weekday-1)); // Ga naar maandag
+    d=d.subtract(Duration(days:d.weekday-1));
     DateTime p=d.subtract(const Duration(days:7));
     setState(()
     {
@@ -507,7 +454,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   void _goToNextWeek()
   {
     DateTime d=DateTime.utc(_currentYear).add(Duration(days:(_currentWeek-1)*7));
-    d=d.subtract(Duration(days:d.weekday-1)); // Ga naar maandag
+    d=d.subtract(Duration(days:d.weekday-1));
     DateTime n=d.add(const Duration(days:7));
     setState(()
     {
@@ -517,7 +464,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     _fetchSchedule();
   }
 
-  // Navigeert naar het dagrooster scherm voor de gegeven datum.
   void _navigateToDailySchedule(BuildContext context, DateTime date)
   {
     if (_localAuthToken == null || _localNodeId == null)
@@ -539,7 +485,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     );
   }
 
-  // Bouwt de week navigatie balk.
   Widget _buildWeekNavigator(BuildContext context)
   {
     final bool canNavigate = !_isLoading && !_isCheckingFuture && (_localAuthToken != null);
@@ -553,7 +498,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
-          onTap: null, // Geen actie op de hele balk
+          onTap: null,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal:8.0),
             child: Row(
@@ -566,7 +511,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   onPressed: canNavigate ? _goToPreviousWeek : null,
                   color: canNavigate ? clr.onSurface : Colors.grey,
                 ),
-                // Weeknummer en jaar (niet klikbaar gemaakt)
                 Text('Week $_currentWeek - $_currentYear', style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Icons.chevron_right),
@@ -582,7 +526,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     );
   }
 
-  // Bouwt de weergave van de weektotalen.
   Widget _buildTotalsDisplay(BuildContext context, TextTheme textTheme, ColorScheme colorScheme)
   {
     String formattedTotal = WorkShift.formatDuration(_totalWeekDuration);
@@ -612,7 +555,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   child: Text(
                     '(Pauze: $formattedBreak)',
                     style: textTheme.bodyMedium?.copyWith(
-                      color: textTheme.bodySmall?.color, // Subtielere kleur
+                      color: textTheme.bodySmall?.color,
                     ),
                   ),
                 ),
@@ -623,26 +566,42 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     );
   }
 
+  void _onBottomNavTabSelected(BottomNavTab tab) {
+    switch (tab) {
+      case BottomNavTab.agenda:
+        break;
+      case BottomNavTab.zaagtool:
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
+        break;
+      case BottomNavTab.scanner:
+         Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen())).then((scanResult) {
+            if (scanResult != null && scanResult is String && scanResult.isNotEmpty && mounted) {
+                Navigator.pop(context, scanResult);
+            }
+         });
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context)
   {
-    // Maak een display titel met de gebruikersnaam indien beschikbaar
     String displayTitle = 'Rooster';
     if (_localUserName != null && _localUserName!.contains(','))
     {
        final parts = _localUserName!.split(',');
        if (parts.length >= 2)
        {
-          displayTitle = 'Rooster ${parts[1].trim()} ${parts[0].trim()}'; // Voornaam Achternaam
+          displayTitle = 'Rooster ${parts[1].trim()} ${parts[0].trim()}';
        }
        else
        {
-          displayTitle = 'Rooster ${_localUserName!}';
+          displayTitle = 'Rooster $_localUserName!';
        }
     }
     else if (_localUserName != null)
     {
-        displayTitle = 'Rooster ${_localUserName!}';
+        displayTitle = 'Rooster $_localUserName!';
     }
 
     return Scaffold(
@@ -650,19 +609,16 @@ class _ScheduleScreenState extends State<ScheduleScreen>
         title: Text(displayTitle),
         actions:
         [
-          // Toon kleine lader als toekomstige weken worden gecheckt
           if (_isCheckingFuture)
             const Padding(
               padding: EdgeInsets.only(right: 8.0),
               child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             ),
-          // Refresh knop
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Verversen',
             onPressed: (_isLoading || _isCheckingFuture || _localAuthToken == null) ? null : _fetchSchedule,
           ),
-          // Logout knop (alleen als ingelogd)
           if (_localAuthToken != null)
             IconButton(
               icon: const Icon(Icons.logout),
@@ -696,19 +652,20 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           Expanded(child: _buildBody(context, Theme.of(context).textTheme, Theme.of(context).colorScheme)),
         ],
       ),
+      bottomNavigationBar: CustomBottomNavBar(
+        currentTab: BottomNavTab.agenda,
+        onTabSelected: _onBottomNavTabSelected,
+      ),
     );
   }
 
-  // Bouwt de hoofdinhoud: lader, foutmelding, lege staat of de lijst met shifts.
   Widget _buildBody(BuildContext context, TextTheme textTheme, ColorScheme colorScheme)
   {
-    // Toon lader als we laden en nog geen shifts hebben
     if (_isLoading && _shifts.isEmpty)
     {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Toon foutmelding als die er is en er geen shifts zijn
     if (_error != null && _shifts.isEmpty)
     {
       bool isLoginIssue = _localAuthToken == null || (_error!.contains("inloggen") || _error!.contains("ingelogd") || _error!.contains("Sessie verlopen") || _error!.contains("Authenticatiegegevens") || _error!.contains("Token niet beschikbaar"));
@@ -723,14 +680,12 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               const SizedBox(height: 16),
               Text( _error!, style: TextStyle(color: colorScheme.error, fontSize: 16), textAlign: TextAlign.center,),
               const SizedBox(height: 20),
-              // Toon login knop bij login-gerelateerde fouten
               if (isLoginIssue)
                 ElevatedButton.icon(
                   icon: const Icon(Icons.login),
                   label: const Text('Inloggen'),
                   onPressed: _isLoading ? null : _promptLoginAndFetch,
                 )
-              // Toon refresh knop bij andere fouten (als ingelogd)
               else if (_localAuthToken != null)
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(foregroundColor: colorScheme.onError, backgroundColor: colorScheme.error,)
@@ -745,7 +700,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       );
     }
 
-    // Toon login prompt als niet ingelogd en geen error/shifts
     if (_localAuthToken == null && _shifts.isEmpty && _error == null)
     {
       return Center(
@@ -770,7 +724,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       );
     }
 
-    // Hoofdweergave: Lijst + Totalen (of lege staat)
     return Column(
       children:
       [
@@ -778,7 +731,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
           child: RefreshIndicator(
             onRefresh: _fetchSchedule,
             child: (_shifts.isEmpty && !_isLoading)
-                // Toon lege staat als er geen shifts zijn (en niet laden)
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
@@ -793,7 +745,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       )
                     ),
                   )
-                // Toon de lijst met shifts
                 : ListView.builder(
                     padding: const EdgeInsets.only(left: 8.0, right: 8.0, bottom: 8.0),
                     itemCount: _shifts.length,
@@ -801,13 +752,11 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                     {
                       final shift = _shifts[index];
                       final shiftDate = shift.date;
-                      // Toon datum header alleen als de dag verandert
                       final bool showDateHeader = index == 0 ||
                           _shifts[index - 1].date.day != shift.date.day ||
                           _shifts[index-1].date.month != shift.date.month ||
                           _shifts[index-1].date.year != shift.date.year ;
 
-                      // Bepaal styling gebaseerd op wijzigingsstatus
                       Color? tileColor;
                       IconData? leadingIcon;
                       Color? leadingIconColor;
@@ -819,17 +768,17 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       switch (shift.changeType)
                       {
                         case ShiftChangeType.added:
-                          tileColor = Colors.green.withAlpha((255*0.1).round());
+                          tileColor = Colors.green.withAlpha((0.1 * 255).round());
                           leadingIcon = Icons.add_circle_outline;
                           leadingIconColor = Colors.green;
                           break;
                         case ShiftChangeType.modified:
-                          tileColor = Colors.orange.withAlpha((255*0.1).round());
+                          tileColor = Colors.orange.withAlpha((0.1 * 255).round());
                           leadingIcon = Icons.edit_outlined;
                           leadingIconColor = Colors.orange[800];
                           break;
                         case ShiftChangeType.deleted:
-                          tileColor = Colors.grey.withAlpha((255*0.1).round());
+                          tileColor = Colors.grey.withAlpha((0.1 * 255).round());
                           leadingIcon = Icons.delete_outline;
                           leadingIconColor = Colors.grey[600];
                           itemDecoration = TextDecoration.lineThrough;
@@ -841,20 +790,18 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                           break;
                       }
 
-                      // Helper om tijd weer te geven (met eventuele oude tijd doorgestreept)
                       Widget buildTimeWidget(TimeOfDay currentTime, TimeOfDay? previousTime, TextStyle? baseStyle, TextStyle? oldStyle)
                       {
                           List<InlineSpan> spans = [];
                           if (shift.isModified && previousTime != null && previousTime != currentTime)
                           {
                             spans.add(TextSpan( text: WorkShift.formatTime(previousTime), style: oldStyle, ));
-                            spans.add(const TextSpan(text: ' ')); // Spatie tussen oud en nieuw
+                            spans.add(const TextSpan(text: ' '));
                           }
                           spans.add(TextSpan( text: WorkShift.formatTime(currentTime), style: baseStyle?.copyWith(decoration: itemDecoration, color: itemColor), ));
                           return RichText( text: TextSpan(children: spans), textAlign: TextAlign.end, );
                       }
 
-                      // Widget voor start- en eindtijd
                       Widget leadingWidget = Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -865,26 +812,21 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                         ],
                       );
 
-                      // Widget voor totale duur
                      Widget trailingWidget = Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children:
                         [
-                          // Toon oude duur indien gewijzigd
                           if (shift.isModified && shift.previousTotalDuration != null && shift.previousTotalDuration != shift.totalDuration)
                             Text( WorkShift.formatDuration(shift.previousTotalDuration!), style: textTheme.bodySmall?.copyWith(decoration: TextDecoration.lineThrough, color: Colors.grey[600])),
-                          // Toon huidige duur
                           Text( shift.totalTimeDisplay, style: textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.bold, color: trailingColor, decoration: itemDecoration),),
                         ],
                       );
 
-                      // Bouw de kaart en eventuele header
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children:
                         [
-                          // Toon datum header indien nodig, maak klikbaar
                           if (showDateHeader)
                             InkWell(
                               onTap: () => _navigateToDailySchedule(context, shiftDate),
@@ -896,11 +838,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                                 ),
                               ),
                             ),
-                          // De shift kaart, maak klikbaar
                           InkWell(
                             onTap: () => _navigateToDailySchedule(context, shiftDate),
                             child: Card(
-                              color: tileColor, // Achtergrondkleur voor wijzigingen
+                              color: tileColor,
                               margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 0),
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
@@ -912,13 +853,11 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children:
                                     [
-                                      // Toon wijzigingsicoon
                                       if (leadingIcon != null)
                                         Padding(
                                           padding: const EdgeInsets.only(bottom: 3.0),
                                           child: Icon(leadingIcon, color: leadingIconColor, size: 16),
                                         ),
-                                      // Toon oude waarden bij wijziging
                                       if (shift.isModified) ...
                                       [
                                          if(shift.previousBreakDuration != null && shift.previousBreakDuration != shift.breakDuration)
@@ -927,7 +866,6 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                                            Text('Afd. was: ${shift.previousDepartmentName!}', style: textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
                                          const SizedBox(height: 4),
                                       ],
-                                      // Toon locatie, type en pauze
                                       Text(shift.nodeName, style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
                                       Text('Type: ${shift.hourCodeName}', style: textTheme.bodyMedium?.copyWith(decoration: itemDecoration, color: subtitleColor)),
                                       if (shift.breakDuration > Duration.zero && !shift.isDeleted)
@@ -946,10 +884,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                   ),
           ),
         ),
-        // Toon totalen onderaan als er shifts zijn en niet aan het laden
         if (!_isLoading && _shifts.isNotEmpty)
           _buildTotalsDisplay(context, textTheme, colorScheme),
-        // Toon lineaire progress indicator als we laden maar al shifts hebben (bv. bij refresh)
         if (_isLoading && _shifts.isNotEmpty)
           const Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: LinearProgressIndicator()),
       ],

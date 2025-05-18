@@ -11,7 +11,8 @@ import 'core/product_html_parser.dart';
 import 'widgets/product_image_header.dart';
 import 'widgets/product_stock_list.dart';
 import 'widgets/product_info_section.dart';
-
+import '../../widgets/custom_bottom_nav_bar.dart';
+import '../home_page.dart'; // Voor UnderConstructionScreen
 
 class ProductDetailsScreen extends StatefulWidget
 {
@@ -24,6 +25,9 @@ class ProductDetailsScreen extends StatefulWidget
 
 class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 {
+  String _displayPageTitle = "Laden...";
+  String _displayPageArticleCode = "Laden...";
+  String? _displayPageEan;
   String? _description;
   String? _specifications;
   String? _detailImageUrl;
@@ -40,6 +44,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   Map<String, int?> _storeStocks = {};
   String? _stockError;
   OrderabilityStatus _orderStatus = OrderabilityStatus.unknown;
+  List<ProductVariant> _productVariants = [];
 
   static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
   final Map<String, String> _targetStores =
@@ -62,29 +67,59 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   void initState()
   {
     super.initState();
-    _detailImageUrl = widget.product.imageUrl;
-    _detailPriceString = widget.product.priceString;
-    _detailOldPriceString = widget.product.oldPriceString;
-    _detailDiscountLabel = widget.product.discountLabel;
-    _detailPromotionDescription = widget.product.promotionDescription;
-    _detailPricePerUnitString = widget.product.pricePerUnitString;
-    _detailPriceUnit = widget.product.priceUnit?.replaceAll('m²', 'm2');
-    _detailPricePerUnitLabel = widget.product.pricePerUnitLabel;
-
-    _fetchProductDetails();
-    _fetchSpecificStoreStocks();
+    _displayPageTitle = widget.product.title;
+    _displayPageArticleCode = widget.product.articleCode;
+    _displayPageEan = widget.product.eanCode;
+    _initializeProductData(widget.product);
   }
 
-  Future<void> _fetchProductDetails() async
+  @override
+  void didUpdateWidget(covariant ProductDetailsScreen oldWidget)
   {
-    setState(()
-    {
-      _isLoadingDetails = true;
-      _detailsError = null;
+    super.didUpdateWidget(oldWidget);
+    if (widget.product.productUrl != oldWidget.product.productUrl || 
+        widget.product.articleCode != oldWidget.product.articleCode) {
+      setState(() {
+        _displayPageTitle = widget.product.title;
+        _displayPageArticleCode = widget.product.articleCode;
+        _displayPageEan = widget.product.eanCode;
+      });
+      _initializeProductData(widget.product);
+    }
+  }
+
+  void _initializeProductData(Product product)
+  {
+    setState(() {
+      _description = null;
+      _specifications = null;
+      _detailImageUrl = product.imageUrl;
+      _detailPriceString = product.priceString;
+      _detailOldPriceString = product.oldPriceString;
+      _detailDiscountLabel = product.discountLabel;
+      _detailPromotionDescription = product.promotionDescription;
+      _detailPricePerUnitString = product.pricePerUnitString;
+      _detailPriceUnit = product.priceUnit?.replaceAll('m²', 'm2');
+      _detailPricePerUnitLabel = product.pricePerUnitLabel;
       _orderStatus = OrderabilityStatus.unknown;
+      _productVariants = [];
+      _storeStocks = {};
+      _stockError = null;
+      _detailsError = null;
+      _isLoadingDetails = true;
+      _isLoadingStock = true;
     });
 
-    if (widget.product.productUrl == null || widget.product.productUrl!.isEmpty)
+    _fetchProductDetails(product);
+  }
+
+  Future<void> _fetchProductDetails(Product currentProduct) async
+  {
+    if (!mounted) return;
+    setState(() { _isLoadingDetails = true; _detailsError = null; });
+
+
+    if (currentProduct.productUrl == null || currentProduct.productUrl!.isEmpty)
     {
       if (mounted)
       {
@@ -92,29 +127,44 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         {
           _detailsError = "Product URL ontbreekt.";
           _isLoadingDetails = false;
-          _orderStatus = OrderabilityStatus.unknown;
+          _isLoadingStock = false;
         });
       }
       return;
     }
 
-    final url = Uri.parse(widget.product.productUrl!);
+    final String currentUrl = currentProduct.productUrl!;
 
     try
     {
-      final response = await http.get(url, headers: {'User-Agent': _userAgent});
+      final response = await http.get(Uri.parse(currentUrl), headers: {'User-Agent': _userAgent});
       if (!mounted) return;
 
       if (response.statusCode == 200)
       {
         final responseBody = utf8.decode(response.bodyBytes);
-        final result = await compute(parseProductDetailsHtml, responseBody);
+        
+        final Map<String, String> isolateArgs = {
+          'htmlBody': responseBody,
+          'currentProductUrl': currentUrl,
+        };
+
+        final result = await compute(parseProductDetailsHtmlIsolate, isolateArgs);
+        
         if (!mounted) return;
+
+        String finalArticleCode = result.scrapedArticleCode ?? _displayPageArticleCode;
+        String? finalEanCode = result.scrapedEan ?? _displayPageEan;
 
         setState(()
         {
+          _displayPageTitle = result.scrapedTitle ?? _displayPageTitle;
+          _displayPageArticleCode = finalArticleCode;
+          _displayPageEan = finalEanCode;
+
           _description = result.description ?? _description;
           _specifications = result.specifications ?? _specifications;
+          _detailImageUrl = result.imageUrl ?? _detailImageUrl;
           _detailPriceString = result.priceString ?? _detailPriceString;
           _detailOldPriceString = result.oldPriceString ?? _detailOldPriceString;
           _detailPriceUnit = result.priceUnit ?? _detailPriceUnit;
@@ -123,69 +173,72 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           _detailDiscountLabel = result.discountLabel ?? _detailDiscountLabel;
           _detailPromotionDescription = result.promotionDescription ?? _detailPromotionDescription;
           _orderStatus = result.status;
+          _productVariants = result.variants;
+          _isLoadingDetails = false;
 
-          if (_description == null && _specifications == null && result.priceString == null)
+          if (_description == null && _specifications == null && result.priceString == null && _productVariants.isEmpty && result.scrapedTitle == null)
           {
-            _detailsError = 'Kon geen details uit de productpagina lezen.';
+            _detailsError = 'Kon geen details of varianten uit de productpagina lezen.';
+             _isLoadingStock = false;
           }
           else
           {
             _detailsError = null;
           }
         });
+
+        if (finalArticleCode != "Laden..." && finalArticleCode != "Code?") {
+          final Product productForStockCheck = Product(
+              title: _displayPageTitle,
+              articleCode: finalArticleCode,
+              eanCode: finalEanCode,
+              productUrl: currentUrl
+              );
+          _fetchSpecificStoreStocks(productForStockCheck);
+        } else {
+          setState(() {
+              _stockError = "Kon artikelcode niet bepalen voor voorraadcheck.";
+              _isLoadingStock = false;
+          });
+        }
+
       }
       else
       {
-        if (mounted)
-        {
-          setState(()
-          {
+        if (mounted) {
+          setState(() {
             _detailsError = 'Fout bij laden details: Server status ${response.statusCode}';
-            _orderStatus = OrderabilityStatus.unknown;
+            _isLoadingDetails = false;
+            _isLoadingStock = false;
           });
         }
       }
     }
     catch (e)
     {
-      if (mounted)
-      {
-        setState(()
-        {
+      if (mounted) {
+        setState(() {
           _detailsError = 'Fout bij verwerken productpagina: $e';
-          _orderStatus = OrderabilityStatus.unknown;
-        });
-      }
-    }
-    finally
-    {
-      if (mounted)
-      {
-        setState(()
-        {
           _isLoadingDetails = false;
+          _isLoadingStock = false;
         });
       }
     }
   }
 
-  Future<void> _fetchSpecificStoreStocks() async
+  Future<void> _fetchSpecificStoreStocks(Product currentProduct) async
   {
-    setState(()
-    {
-      _isLoadingStock = true;
-      _stockError = null;
-      _storeStocks = {};
-    });
+    if (!mounted) return;
+    setState(() { _isLoadingStock = true; _stockError = null; });
 
-    String productId = widget.product.articleCode;
-    if (productId == 'Code?' || productId == 'Code niet gevonden')
+    String productId = currentProduct.articleCode; 
+    if (productId == 'Laden...' || productId == 'Code?' || productId == 'Code niet gevonden')
     {
       if (mounted)
       {
         setState(()
         {
-          _stockError = "Artikelcode onbekend, kan voorraad niet ophalen.";
+          _stockError = "Artikelcode nog niet geladen, kan voorraad niet ophalen.";
           _isLoadingStock = false;
         });
       }
@@ -197,7 +250,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
     catch (e)
     {
-        // Blijf bij de originele string als parsen mislukt
+        // no-op
     }
 
     Map<String, int?> finalStocks = {};
@@ -330,10 +383,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     }
   }
 
-  Future<void> _navigateToScannerFromDetails() async
-  {
-    try
-    {
+  Future<void> _navigateToScannerFromDetailsAndReplace() async {
+    try {
       final String? scanResult = await Navigator.push<String>(
         context,
         MaterialPageRoute(builder: (context) => const ScannerScreen()),
@@ -341,55 +392,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
       if (!mounted) return;
 
-      if (scanResult != null && scanResult.isNotEmpty)
-      {
-        String? resultValueForHomePage;
-        final Uri? uri = Uri.tryParse(scanResult);
-        final bool isLikelyUrl = uri != null && uri.hasScheme && uri.hasAuthority;
-        final bool isGammaProductUrl = isLikelyUrl && uri.host.contains('gamma.nl') && uri.pathSegments.contains('assortiment') && uri.pathSegments.length > 1 && uri.pathSegments.last.isNotEmpty;
-        final bool isEan13 = _ean13Regex.hasMatch(scanResult);
-
-        if (isGammaProductUrl)
-        {
-          String pIdRaw = uri.pathSegments.last;
-          String sId = pIdRaw;
-          if (pIdRaw.isNotEmpty && (pIdRaw.startsWith('B') || pIdRaw.startsWith('b')) && pIdRaw.length > 1)
-          {
-            sId = pIdRaw.substring(1);
-          }
-          try
-          {
-              sId = int.parse(sId).toString();
-          }
-          catch(e)
-          {
-              // Blijf bij de originele string als parsen mislukt
-          }
-          resultValueForHomePage = sId;
-        }
-        else if (isEan13)
-        {
-          resultValueForHomePage = scanResult;
-        }
-        else
-        {
-          resultValueForHomePage = scanResult;
-          if(mounted)
-          {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Onbekend code formaat gescand: $scanResult')),
-            );
-          }
-        }
-
-        if (mounted && resultValueForHomePage != null)
-        {
-          Navigator.pop(context, resultValueForHomePage);
-        }
+      if (scanResult != null && scanResult.isNotEmpty) {
+        Navigator.pop(context, scanResult); 
       }
-    }
-    catch (e)
-    {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Fout bij openen scanner: $e')),
@@ -422,33 +428,136 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
   }
 
-    @override
+  Map<String, List<ProductVariant>> _getGroupedVariants() {
+    final Map<String, List<ProductVariant>> grouped = {};
+    for (var variant in _productVariants) {
+      (grouped[variant.groupName] ??= []).add(variant);
+    }
+    return grouped;
+  }
+
+  void _navigateToVariant(ProductVariant variant) {
+    if (variant.isSelected) return;
+
+    final variantProduct = Product(
+        title: variant.variantName,
+        articleCode: "Laden...", 
+        productUrl: variant.productUrl,
+        eanCode: null, 
+    );
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductDetailsScreen(product: variantProduct),
+      ),
+    );
+  }
+
+  void _navigateToZaagTool(BuildContext context, Product product) {
+     Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
+   }
+
+  void _onBottomNavTabSelectedOnDetailsPage(BottomNavTab tab) {
+    switch (tab) {
+      case BottomNavTab.agenda:
+        Navigator.push(context, MaterialPageRoute(builder: (context) =>
+          Scaffold(appBar: AppBar(title: const Text("Agenda (Placeholder)")), body: const Center(child: Text("Agenda Scherm"))),
+        ));
+        break;
+      case BottomNavTab.zaagtool:
+        _navigateToZaagTool(context, widget.product);
+        break;
+      case BottomNavTab.scanner:
+        _navigateToScannerFromDetailsAndReplace();
+        break;
+    }
+  }
+
+  Widget _buildVariantSelector() {
+    if (_productVariants.isEmpty || _isLoadingDetails) {
+      return const SizedBox.shrink();
+    }
+
+    final grouped = _getGroupedVariants();
+    if (grouped.isEmpty) {
+        return const SizedBox.shrink();
+    }
+    final List<Widget> variantWidgets = [];
+    final ColorScheme clr = Theme.of(context).colorScheme;
+    final TextTheme txt = Theme.of(context).textTheme;
+
+
+    grouped.forEach((groupName, variantsInGroup) {
+      variantWidgets.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+          child: Text(groupName, style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        )
+      );
+      variantWidgets.add(
+        Wrap(
+          spacing: 8.0,
+          runSpacing: 4.0,
+          children: variantsInGroup.map((variant) {
+            return ChoiceChip(
+              label: Text(variant.variantName),
+              selected: variant.isSelected,
+              onSelected: (selected) {
+                if (selected && !variant.isSelected) {
+                  _navigateToVariant(variant);
+                }
+              },
+              selectedColor: clr.primary.withAlpha((0.15 * 255).round()),
+              labelStyle: TextStyle(
+                color: variant.isSelected
+                    ? clr.primary
+                    : clr.onSurface.withAlpha((0.8 * 255).round()),
+                fontWeight: variant.isSelected ? FontWeight.bold : FontWeight.normal
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: variant.isSelected ? clr.primary : clr.outline.withAlpha((0.5 * 255).round()),
+                  width: variant.isSelected ? 1.5 : 1.0,
+                )
+              ),
+              backgroundColor: clr.surfaceContainerLowest,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            );
+          }).toList(),
+        )
+      );
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: variantWidgets,
+    );
+  }
+
+
+  @override
   Widget build(BuildContext context)
   {
     final TextTheme txt = Theme.of(context).textTheme;
-    final ColorScheme clr = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: clr.background, // Explicitly set background for contrast with section containers
       appBar: AppBar(
-        title: Text(widget.product.title, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
-        actions:
-        [
-          IconButton(
-            icon: const Icon(Icons.qr_code_scanner_outlined),
-            onPressed: _navigateToScannerFromDetails,
-            tooltip: 'Scan nieuwe code',
-          ),
-        ],
+        title: Text(_displayPageTitle, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
+        actions: const [],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(top: 16.0, bottom: 24.0), // Verticale padding voor de hele scrollview
+        padding: const EdgeInsets.only(top: 16.0, bottom: 24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children:
           [
             ProductImageHeader(
-              product: widget.product,
+              product: widget.product, 
+              displayTitle: _displayPageTitle,
+              displayArticleCode: _displayPageArticleCode,
+              displayEan: _displayPageEan, 
               detailImageUrl: _detailImageUrl,
               detailPriceString: _detailPriceString,
               detailOldPriceString: _detailOldPriceString,
@@ -462,26 +571,36 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               onShowPromotionDetails: _showPromotionDetails,
             ),
 
-            const SizedBox(height: 28), // Iets meer ruimte naar de eerste 'grote' sectie
+            const SizedBox(height: 28),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text('Voorraad (indicatie)', style: txt.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: txt.headlineSmall?.color)),
+              child: _buildVariantSelector(),
+            ),
+
+            if (_productVariants.isNotEmpty) const SizedBox(height: 12),
+
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text('Voorraad:', style: txt.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: txt.headlineSmall?.color)),
             ),
             const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0), // Horizontale padding voor de sectie
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ProductStockList(
                 isLoadingStock: _isLoadingStock,
                 stockError: _stockError,
                 storeStocks: _storeStocks,
               ),
             ),
-
-            const SizedBox(height: 28),
-
+            const SizedBox(height: 16),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Divider(thickness: 0.5),
+            ),
+            const SizedBox(height: 20),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0), // Horizontale padding voor de sectie
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ProductInfoSection(
                 isLoadingDetails: _isLoadingDetails,
                 description: _description,
@@ -489,8 +608,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 detailsError: _detailsError,
               ),
             ),
-
-            if (_detailsError != null && _description == null && _specifications == null && !_isLoadingDetails)
+            if (_detailsError != null && _description == null && _specifications == null && !_isLoadingDetails && _productVariants.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 30.0),
                 child: Center(
@@ -503,6 +621,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               ),
           ],
         ),
+      ),
+      bottomNavigationBar: CustomBottomNavBar(
+        onTabSelected: _onBottomNavTabSelectedOnDetailsPage,
       ),
     );
   }

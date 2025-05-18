@@ -1,9 +1,22 @@
 import 'package:html/parser.dart' show parse;
+import 'package:html/dom.dart' as dom;
 import 'product_details_data.dart';
 
-Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) async
-{
+// Helper functie om een string naar Title Case te converteren
+String _toTitleCase(String text) {
+  if (text.isEmpty) return '';
+  return text.split(' ')
+      .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}' : '')
+      .join(' ');
+}
+
+
+Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, String> args) async {
+  final String htmlBody = args['htmlBody']!;
+  final String currentProductUrl = args['currentProductUrl']!;
+
   final document = parse(htmlBody);
+  List<ProductVariant> foundVariants = [];
   String? pDesc;
   String? pSpecs;
   String? fImgUrl;
@@ -15,13 +28,79 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) asyn
   String? newPriceUnit;
   String? newPricePerUnitLabel;
   OrderabilityStatus determinedStatus = OrderabilityStatus.unknown;
+  String? scrapedPageTitle;
+  String? scrapedPageArticleCode;
+  String? scrapedPageEan;
 
   final RegExp priceCleanRegex = RegExp(r'[^\d,.]');
   final RegExp promoDescCleanupRegex1 = RegExp(r'Bekijk alle producten.*$', multiLine: true);
   final RegExp promoDescCleanupRegex2 = RegExp(r'\s+');
 
-  try
-  {
+  try {
+    final Uri uri = Uri.parse(currentProductUrl);
+    if (uri.pathSegments.isNotEmpty) {
+      final int pIndex = uri.pathSegments.lastIndexOf('p');
+      if (pIndex != -1 && pIndex + 1 < uri.pathSegments.length) {
+        String idSegment = uri.pathSegments[pIndex + 1];
+        if (idSegment.startsWith('B') || idSegment.startsWith('b')) {
+          idSegment = idSegment.substring(1);
+        }
+        final int? parsedId = int.tryParse(idSegment);
+        if (parsedId != null) {
+            scrapedPageArticleCode = parsedId.toString();
+        } else {
+            scrapedPageArticleCode = idSegment;
+        }
+      }
+      // Probeer titel uit URL slug te halen als fallback of primaire bron
+      if (pIndex > 0 && pIndex -1 < uri.pathSegments.length) {
+        String slug = uri.pathSegments[pIndex -1];
+        if (slug.isNotEmpty && slug != "assortiment") { // Voorkom dat "assortiment" de titel wordt
+            scrapedPageTitle = _toTitleCase(slug.replaceAll('-', ' '));
+        }
+      }
+    }
+
+    if (scrapedPageArticleCode == null || scrapedPageArticleCode.isEmpty) {
+        dom.Element? articleElement = document.querySelector('.product-sku .value, .product-info__sku, [data-product-id], [itemprop="sku"]');
+        if (articleElement != null) {
+            scrapedPageArticleCode = articleElement.text.trim();
+            if (scrapedPageArticleCode.isEmpty && articleElement.attributes.containsKey('data-product-id')) {
+                scrapedPageArticleCode = articleElement.attributes['data-product-id']?.trim();
+            } else if (scrapedPageArticleCode.isEmpty && articleElement.attributes.containsKey('content')) {
+                scrapedPageArticleCode = articleElement.attributes['content']?.trim();
+            }
+        }
+        if (scrapedPageArticleCode != null && scrapedPageArticleCode.toLowerCase().startsWith('art.')) {
+            scrapedPageArticleCode = scrapedPageArticleCode.substring(4).trim();
+        }
+        if (scrapedPageArticleCode != null && scrapedPageArticleCode.toLowerCase().startsWith('artikelnummer:')) {
+            scrapedPageArticleCode = scrapedPageArticleCode.substring(14).trim();
+        }
+    }
+
+    // Als titel nog niet uit URL is gehaald, probeer HTML te parsen
+    if (scrapedPageTitle == null || scrapedPageTitle.isEmpty) {
+        scrapedPageTitle = document.querySelector('h1.pdp-title, .product-title h1, .page-title')?.text.trim();
+        if (scrapedPageTitle == null || scrapedPageTitle.isEmpty) {
+            scrapedPageTitle = document.querySelector('title')?.text.split('|').first.trim();
+            if (scrapedPageTitle != null && scrapedPageTitle.contains(" - GAMMA")) {
+                scrapedPageTitle = scrapedPageTitle.substring(0, scrapedPageTitle.indexOf(" - GAMMA")).trim();
+            }
+             if (scrapedPageTitle != null && scrapedPageTitle.contains(" | GAMMA")) { // Nog een variant
+                scrapedPageTitle = scrapedPageTitle.substring(0, scrapedPageTitle.indexOf(" | GAMMA")).trim();
+            }
+        }
+    }
+    
+    dom.Element? eanElement = document.querySelector('[itemprop="gtin13"], [itemprop="gtin"], .product-ean .value');
+    if (eanElement != null) {
+        scrapedPageEan = eanElement.attributes['content'] ?? eanElement.text.trim();
+    }
+    if (scrapedPageEan != null && scrapedPageEan.isEmpty) {
+        scrapedPageEan = null;
+    }
+
     final orderBlock = document.querySelector('#product-order-block');
     if (orderBlock != null)
     {
@@ -50,6 +129,10 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) asyn
           {
              determinedStatus = OrderabilityStatus.clickAndCollectOnly;
           }
+          else 
+          {
+            determinedStatus = OrderabilityStatus.unknown;
+          }
        }
     }
     else
@@ -58,6 +141,10 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) asyn
        if (outOfAssortmentMain != null && outOfAssortmentMain.text.contains('uit ons assortiment'))
        {
          determinedStatus = OrderabilityStatus.outOfAssortment;
+       }
+       else
+       {
+         determinedStatus = OrderabilityStatus.unknown;
        }
     }
 
@@ -232,14 +319,74 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) asyn
         .trim();
       if (newPromoDesc.isEmpty) newPromoDesc = null;
     }
-  }
-  catch (e, s)
-  {
-    print("Error during background parsing: $e\n$s");
-    return ProductDetailsScrapeResult(status: determinedStatus);
+
+    final List<dom.Element> variantGroups = document.querySelectorAll('div.variant.js-product-variant');
+    for (dom.Element groupElement in variantGroups) {
+      final strongElement = groupElement.querySelector('label strong.js-variant-name');
+      String groupName = strongElement?.text.trim().replaceAll(':', '') ?? 'Variant';
+
+      final List<dom.Element> variantTiles = groupElement.querySelectorAll('a.variant-tile');
+      if (variantTiles.isNotEmpty) {
+        for (dom.Element tile in variantTiles) {
+          String variantName = tile.text.trim();
+          String? productUrlFromTile = tile.attributes['href'];
+          bool isSelected = tile.classes.contains('selected') || productUrlFromTile == null || productUrlFromTile.isEmpty;
+          
+          if (productUrlFromTile == null || productUrlFromTile.isEmpty) {
+              if (isSelected) {
+                  productUrlFromTile = currentProductUrl;
+              } else {
+                  continue; 
+              }
+          }
+
+          if (!productUrlFromTile.startsWith('http')) {
+            productUrlFromTile = 'https://www.gamma.nl$productUrlFromTile';
+          }
+
+          if (variantName.isNotEmpty) {
+            foundVariants.add(ProductVariant(
+              groupName: groupName,
+              variantName: variantName,
+              productUrl: productUrlFromTile,
+              isSelected: isSelected,
+            ));
+          }
+        }
+      } else {
+        final dom.Element? selectElement = groupElement.querySelector('select.js-base-product-select');
+        if (selectElement != null) {
+          final List<dom.Element> options = selectElement.querySelectorAll('option.base-product-option');
+          for (dom.Element option in options) {
+            String variantName = option.text.trim();
+            String? productUrlFromOption = option.attributes['data-link'];
+            bool isSelected = option.attributes.containsKey('selected');
+
+            if (productUrlFromOption != null && productUrlFromOption.isNotEmpty) {
+               if (!productUrlFromOption.startsWith('http')) {
+                productUrlFromOption = 'https://www.gamma.nl$productUrlFromOption';
+              }
+              if (variantName.isNotEmpty) {
+                foundVariants.add(ProductVariant(
+                  groupName: groupName,
+                  variantName: variantName,
+                  productUrl: productUrlFromOption,
+                  isSelected: isSelected,
+                ));
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (e,s) {
+    // no-op
   }
 
   return ProductDetailsScrapeResult(
+    scrapedTitle: scrapedPageTitle,
+    scrapedArticleCode: scrapedPageArticleCode,
+    scrapedEan: scrapedPageEan,
     status: determinedStatus,
     description: pDesc,
     specifications: pSpecs,
@@ -250,6 +397,7 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtml(String htmlBody) asyn
     pricePerUnitString: newPricePerUnit,
     pricePerUnitLabel: newPricePerUnitLabel,
     discountLabel: newDiscount,
-    promotionDescription: newPromoDesc
+    promotionDescription: newPromoDesc,
+    variants: foundVariants,
   );
 }

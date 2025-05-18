@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import '../../../models/product.dart';
 import '../core/product_details_data.dart';
 
-class ProductImageHeader extends StatelessWidget
-{
+class ProductImageHeader extends StatelessWidget {
   final Product product;
+  final String displayTitle;
+  final String displayArticleCode;
+  final String? displayEan;
   final String? detailImageUrl;
   final String? detailPriceString;
   final String? detailOldPriceString;
@@ -17,10 +19,12 @@ class ProductImageHeader extends StatelessWidget
   final bool isLoadingDetails;
   final VoidCallback onShowPromotionDetails;
 
-  const ProductImageHeader(
-  {
+  const ProductImageHeader({
     super.key,
     required this.product,
+    required this.displayTitle,
+    required this.displayArticleCode,
+    this.displayEan,
     required this.detailImageUrl,
     required this.detailPriceString,
     this.detailOldPriceString,
@@ -34,17 +38,15 @@ class ProductImageHeader extends StatelessWidget
     required this.onShowPromotionDetails,
   });
 
-  Widget _buildCodeRow(IconData icon, String label, String value, TextTheme txt, ColorScheme clr)
-  {
+  Widget _buildCodeRow(IconData icon, String label, String value, TextTheme txt, ColorScheme clr) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children:
-        [
-          Icon(icon, size: 16, color: txt.bodySmall?.color?.withOpacity(0.7)),
+        children: [
+          Icon(icon, size: 16, color: txt.bodySmall?.color?.withAlpha((0.7 * 255).round())),
           const SizedBox(width: 6),
-          Text(label, style: txt.bodyMedium?.copyWith(color: txt.bodySmall?.color?.withOpacity(0.9), fontSize: 13)),
+          Text(label, style: txt.bodyMedium?.copyWith(color: txt.bodySmall?.color?.withAlpha((0.9 * 255).round()), fontSize: 13)),
           const SizedBox(width: 4),
           Expanded(child: Text(value, style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis)),
         ],
@@ -52,42 +54,38 @@ class ProductImageHeader extends StatelessWidget
     );
   }
 
-  Widget _buildPriceSection(TextTheme txt, ColorScheme clr, BuildContext context)
-  {
+  Widget _buildPriceSection(TextTheme txt, ColorScheme clr, BuildContext context) {
     final bool isDiscountTappable = detailPromotionDescription != null && detailPromotionDescription!.isNotEmpty;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children:
-      [
+      children: [
         Flexible(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
-            children:
-            [
+            children: [
               if (isLoadingDetails && detailPriceString == null)
                 Text("Prijs laden...", style: txt.headlineMedium?.copyWith(color: Colors.grey[600]))
               else if (detailPriceString != null)
                 RichText(
                   text: TextSpan(
                     style: txt.headlineMedium?.copyWith(color: clr.onSurface, fontWeight: FontWeight.bold, fontSize: 28),
-                    children:
-                    [
+                    children: [
                       if (detailOldPriceString != null && detailOldPriceString != detailPriceString)
                         TextSpan(
                           text: '€$detailOldPriceString ',
                           style: TextStyle(
                             fontSize: txt.titleSmall?.fontSize ?? 14,
                             decoration: TextDecoration.lineThrough,
-                            color: clr.onSurfaceVariant.withOpacity(0.7),
+                            color: clr.onSurfaceVariant.withAlpha((0.7 * 255).round()),
                             fontWeight: FontWeight.normal,
                           ),
                         ),
                       TextSpan(
                         text: '€$detailPriceString',
                         style: TextStyle(
-                          color: clr.secondary,
+                          color: clr.secondary, 
                         ),
                       ),
                       if (detailPriceUnit != null)
@@ -125,12 +123,12 @@ class ProductImageHeader extends StatelessWidget
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: clr.secondary,
+                      color: clr.primary, 
                       borderRadius: BorderRadius.circular(8.0),
                        boxShadow:
                        [
                          BoxShadow(
-                           color: Colors.black.withOpacity(0.08),
+                           color: Colors.black.withAlpha((0.08 * 255).round()),
                            blurRadius: 5,
                            offset: const Offset(0, 2),
                          )
@@ -143,7 +141,7 @@ class ProductImageHeader extends StatelessWidget
                         Text(
                           detailDiscountLabel!,
                           style: txt.labelLarge?.copyWith(
-                            color: clr.onSecondary,
+                            color: clr.onPrimary,
                             fontWeight: FontWeight.bold,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -154,7 +152,7 @@ class ProductImageHeader extends StatelessWidget
                             child: Icon(
                               Icons.info_outline,
                               size: (txt.labelLarge?.fontSize ?? 16.0),
-                              color: clr.onSecondary.withOpacity(0.8),
+                              color: clr.onPrimary.withAlpha((0.8 * 255).round()),
                             ),
                           )
                       ],
@@ -168,37 +166,35 @@ class ProductImageHeader extends StatelessWidget
     );
   }
 
-  Widget _buildOrderStatusChipWidget(OrderabilityStatus status, TextTheme textTheme, ColorScheme colorScheme)
-  {
+  Widget _buildOrderStatusChipWidget(OrderabilityStatus status, TextTheme textTheme, ColorScheme colorScheme) {
     IconData iconData;
     Color chipColor;
     Color contentColor;
     String label;
 
-    switch (status)
-    {
+    switch (status) {
       case OrderabilityStatus.onlineAndCC:
         iconData = Icons.local_shipping_outlined;
-        chipColor = colorScheme.primaryContainer.withOpacity(0.6);
+        chipColor = colorScheme.primaryContainer.withAlpha((0.6 * 255).round()); 
         contentColor = colorScheme.onPrimaryContainer;
         label = "Online & Click/Collect";
         break;
       case OrderabilityStatus.clickAndCollectOnly:
         iconData = Icons.store_mall_directory_outlined;
-        chipColor = colorScheme.tertiaryContainer.withOpacity(0.6);
+        chipColor = colorScheme.tertiaryContainer.withAlpha((0.6 * 255).round());
         contentColor = colorScheme.onTertiaryContainer;
         label = "Alleen Click & Collect";
         break;
       case OrderabilityStatus.outOfAssortment:
         iconData = Icons.highlight_off_outlined;
-        chipColor = colorScheme.errorContainer.withOpacity(0.6);
+        chipColor = colorScheme.errorContainer.withAlpha((0.6 * 255).round());
         contentColor = colorScheme.onErrorContainer;
         label = "Uit assortiment";
         break;
       case OrderabilityStatus.unknown:
       default:
         iconData = Icons.help_outline;
-        chipColor = colorScheme.surfaceVariant.withOpacity(0.6);
+        chipColor = colorScheme.surfaceVariant.withAlpha((0.6 * 255).round());
         contentColor = colorScheme.onSurfaceVariant;
         label = "Bestelstatus onbekend";
         break;
@@ -216,8 +212,7 @@ class ProductImageHeader extends StatelessWidget
 
 
   @override
-  Widget build(BuildContext context)
-  {
+  Widget build(BuildContext context) {
     final TextTheme txt = Theme.of(context).textTheme;
     final ColorScheme clr = Theme.of(context).colorScheme;
 
@@ -225,18 +220,16 @@ class ProductImageHeader extends StatelessWidget
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children:
-        [
+        children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children:
-            [
+            children: [
               Container(
                 width: 120,
                 height: 120,
                 decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12.0),
-                    border: Border.all(color: clr.outlineVariant.withOpacity(0.3), width: 0.5)
+                    border: Border.all(color: clr.outline.withAlpha((0.3 * 255).round()), width: 0.5)
 
                 ),
                 child: ClipRRect(
@@ -248,9 +241,9 @@ class ProductImageHeader extends StatelessWidget
                           loadingBuilder: (ctx, child, p) => (p == null)
                               ? child
                               : Container(alignment: Alignment.center, child: CircularProgressIndicator(value: p.expectedTotalBytes != null ? p.cumulativeBytesLoaded / p.expectedTotalBytes! : null, strokeWidth: 2.0,)),
-                          errorBuilder: (ctx, err, st) => Container(color: clr.surfaceContainerHighest.withAlpha(30), alignment: Alignment.center, child: Icon(Icons.broken_image_outlined, size: 40, color: clr.onSurfaceVariant.withOpacity(0.5))),
+                          errorBuilder: (ctx, err, st) => Container(color: clr.surfaceContainerHighest.withAlpha(30), alignment: Alignment.center, child: Icon(Icons.broken_image_outlined, size: 40, color: clr.onSurface.withAlpha(100))),
                         )
-                      : Container(color: clr.surfaceContainerHighest.withAlpha(30), alignment: Alignment.center, child: Icon(Icons.image_not_supported_outlined, size: 40, color: clr.onSurfaceVariant.withOpacity(0.5))),
+                      : Container(color: clr.surfaceContainerHighest.withAlpha(30), alignment: Alignment.center, child: Icon(Icons.image_not_supported_outlined, size: 40, color: clr.onSurface.withAlpha(100))),
                 ),
               ),
               const SizedBox(width: 16),
@@ -258,15 +251,14 @@ class ProductImageHeader extends StatelessWidget
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.start,
-                  children:
-                  [
-                    Text(product.title, style: txt.titleLarge?.copyWith(height: 1.3, fontWeight: FontWeight.w600)),
+                  children: [
+                    Text(displayTitle, style: txt.titleLarge?.copyWith(height: 1.3, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 10),
-                    _buildCodeRow(Icons.inventory_2_outlined, 'Art:', product.articleCode, txt, clr),
-                    if (product.eanCode != null)
+                    _buildCodeRow(Icons.inventory_2_outlined, 'Art:', displayArticleCode, txt, clr),
+                    if (displayEan != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 2.0),
-                        child: _buildCodeRow(Icons.barcode_reader, 'EAN:', product.eanCode!, txt, clr),
+                        child: _buildCodeRow(Icons.barcode_reader, 'EAN:', displayEan!, txt, clr),
                       ),
                   ],
                 ),
