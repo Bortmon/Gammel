@@ -472,11 +472,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     if (mounted && result != null && result.isNotEmpty)
     {
       _searchController.text = result;
-       if (_tabController.index != 0) {
-        _tabController.animateTo(0);
-      } else {
-        _searchProducts(result);
-      }
+      _searchProducts(result);
     }
   }
 
@@ -507,27 +503,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       backgroundColor: clr.background,
       appBar: AppBar(
         title: const Text('Gammel'),
-        actions: const [],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight - 8),
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
-            decoration: BoxDecoration(
-                color: clr.surface.withAlpha(200),
-                borderRadius: BorderRadius.circular(10.0)
-            ),
+        actions:
+        [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            tooltip: 'Bekijk rooster',
+            onPressed: () => _navigateToScheduleScreen(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner_outlined),
+            onPressed: _navigateToScanner,
+            tooltip: 'Scan Barcode',
+          ),
+        ],
+        bottom: PreferredSize( // Om de TabBar een specifieke hoogte te geven indien nodig
+          preferredSize: const Size.fromHeight(48.0), // Standaard TabBar hoogte
+          child: Container( // Container voor eventuele achtergrond of rand
+            color: clr.surface, // Zelfde kleur als AppBar voor eenheid, of clr.background
             child: TabBar(
               controller: _tabController,
-              indicator: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8.0),
-                  color: clr.primary.withAlpha((0.25 * 255).round()) 
-              ),
-              indicatorPadding: const EdgeInsets.all(4.0),
-              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorColor: clr.primary,
+              indicatorWeight: 3.0, // Dikkere indicator
+              indicatorSize: TabBarIndicatorSize.tab, // Indicator over de hele tab breedte
               labelColor: clr.primary,
-              labelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 14.5),
-              unselectedLabelColor: clr.onSurface.withAlpha((0.7 * 255).round()),
-              unselectedLabelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 14.5),
+              labelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.bold, fontSize: 15), // Grotere, vettere tab tekst
+              unselectedLabelColor: clr.onSurface.withAlpha(180),
+              unselectedLabelStyle: txt.titleSmall?.copyWith(fontWeight: FontWeight.w500, fontSize: 15), // Grotere tekst ook voor inactief
               tabs: [
                 const Tab(text: 'Algemeen'),
                 Tab(text: _filterStoreNameHaarlem),
@@ -547,19 +548,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                  controller: _searchController,
                 style: txt.bodyLarge?.copyWith(color: clr.onSurface),
                 decoration: InputDecoration(
-                  hintText: 'Zoek product of scan barcode',
-                  hintStyle: txt.bodyLarge?.copyWith(color: clr.onSurface.withAlpha(150)),
-                  prefixIcon: Icon(Icons.search, color: clr.onSurface.withAlpha(200), size: 26),
-                  fillColor: clr.surface, 
-                  filled: true, 
-                  contentPadding: const EdgeInsets.symmetric(vertical: 18.0, horizontal: 18.0), 
+                  hintText: 'Zoek product of scan barcode', // Gebruik hintText
+                  // labelText: 'Zoek product of scan barcode', // Label kan weg als hintText er is
+                  prefixIcon: Icon(Icons.search, color: clr.onSurface.withAlpha(200)),
+                  fillColor: clr.surface, // Zelfde kleur als blokken/appbar
+                  filled: true, // Moet true zijn om fillColor te gebruiken
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 20.0), // Grotere padding
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12.0), 
-                    borderSide: BorderSide(color: clr.outline.withAlpha(80), width: 1.0), 
+                    borderRadius: BorderRadius.circular(12.0), // Rondere hoeken
+                    borderSide: BorderSide(color: clr.outline.withAlpha(80), width: 1.0), // Subtielere rand
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12.0),
-                    borderSide: BorderSide(color: clr.primary, width: 2.0),
+                    borderSide: BorderSide(color: clr.primary, width: 2.2),
                   ),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _searchController,
@@ -600,9 +601,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ],
         ),
       ),
-      bottomNavigationBar: CustomBottomNavBar(
-        onTabSelected: _onBottomNavTabSelected,
-      ),
+      // FloatingActionButton is verwijderd
     );
   }
 
