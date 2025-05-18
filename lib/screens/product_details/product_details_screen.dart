@@ -12,7 +12,7 @@ import 'widgets/product_image_header.dart';
 import 'widgets/product_stock_list.dart';
 import 'widgets/product_info_section.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
-import '../home_page.dart'; // Voor UnderConstructionScreen
+import '../home_page.dart';
 
 class ProductDetailsScreen extends StatefulWidget
 {
@@ -45,6 +45,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   String? _stockError;
   OrderabilityStatus _orderStatus = OrderabilityStatus.unknown;
   List<ProductVariant> _productVariants = [];
+  Map<String, ProductVariant?> _selectedVariants = {};
 
   static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
   final Map<String, String> _targetStores =
@@ -61,7 +62,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   static const String _karweiStockApiBase = 'https://api.karwei.nl/stock/2/';
   static const String _gammaCookieName = 'PREFERRED-STORE-UID';
   static const String _gammaCookieValueHaarlem = '39';
-  final RegExp _ean13Regex = RegExp(r'^[0-9]{13}$');
 
   @override
   void initState()
@@ -83,6 +83,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         _displayPageTitle = widget.product.title;
         _displayPageArticleCode = widget.product.articleCode;
         _displayPageEan = widget.product.eanCode;
+        _selectedVariants = {};
       });
       _initializeProductData(widget.product);
     }
@@ -155,6 +156,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
 
         String finalArticleCode = result.scrapedArticleCode ?? _displayPageArticleCode;
         String? finalEanCode = result.scrapedEan ?? _displayPageEan;
+        Map<String, ProductVariant?> initialSelectedVariants = {};
+        for (var variant in result.variants) {
+            if (variant.isSelected) {
+                initialSelectedVariants[variant.groupName] = variant;
+            }
+        }
 
         setState(()
         {
@@ -174,6 +181,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           _detailPromotionDescription = result.promotionDescription ?? _detailPromotionDescription;
           _orderStatus = result.status;
           _productVariants = result.variants;
+          _selectedVariants = initialSelectedVariants;
           _isLoadingDetails = false;
 
           if (_description == null && _specifications == null && result.priceString == null && _productVariants.isEmpty && result.scrapedTitle == null)
@@ -458,22 +466,120 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
    }
 
   void _onBottomNavTabSelectedOnDetailsPage(BottomNavTab tab) {
-    switch (tab) {
-      case BottomNavTab.agenda:
-        Navigator.push(context, MaterialPageRoute(builder: (context) =>
-          Scaffold(appBar: AppBar(title: const Text("Agenda (Placeholder)")), body: const Center(child: Text("Agenda Scherm"))),
-        ));
-        break;
-      case BottomNavTab.zaagtool:
-        _navigateToZaagTool(context, widget.product);
-        break;
-      case BottomNavTab.scanner:
-        _navigateToScannerFromDetailsAndReplace();
-        break;
-    }
+  switch (tab) {
+    case BottomNavTab.agenda:
+      Navigator.push(context, MaterialPageRoute(builder: (context) =>
+        Scaffold(appBar: AppBar(title: const Text("Agenda (Placeholder)")), body: const Center(child: Text("Agenda Scherm"))),
+      ));
+      break;
+    case BottomNavTab.home:
+      Navigator.popUntil(context, (route) => route.isFirst);
+      break;
+    case BottomNavTab.scanner:
+      _navigateToScannerFromDetailsAndReplace();
+      break;
+  }
+}
+
+  Widget _buildPriceAndActionSection(TextTheme txt, ColorScheme clr) {
+    final bool isDiscountTappable = _detailPromotionDescription != null && _detailPromotionDescription!.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isLoadingDetails && _detailPriceString == null)
+                  Text("Prijs laden...", style: txt.headlineSmall?.copyWith(color: Colors.grey[600]))
+                else if (_detailPriceString != null)
+                  RichText(
+                    text: TextSpan(
+                      style: txt.headlineSmall?.copyWith(color: clr.onSurface, fontWeight: FontWeight.bold),
+                      children: [
+                        if (_detailOldPriceString != null && _detailOldPriceString != _detailPriceString)
+                          TextSpan(
+                            text: '€$_detailOldPriceString ',
+                            style: TextStyle(
+                              fontSize: txt.titleMedium?.fontSize,
+                              decoration: TextDecoration.lineThrough,
+                              color: clr.onSurfaceVariant.withAlpha((0.7 * 255).round()),
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                        TextSpan(
+                          text: '€$_detailPriceString',
+                          style: TextStyle(color: clr.secondary, fontSize: 26),
+                        ),
+                        if (_detailPriceUnit != null)
+                          TextSpan(
+                            text: ' $_detailPriceUnit',
+                            style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant, fontWeight: FontWeight.normal)
+                          )
+                      ],
+                    ),
+                  )
+                else
+                  Text('Prijs onbekend', style: txt.bodyLarge?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600])),
+
+                if (_detailPricePerUnitString != null && _detailPricePerUnitString != _detailPriceString)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      '€$_detailPricePerUnitString ${(_detailPricePerUnitLabel ?? "p/eenheid").toLowerCase()}',
+                      style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, color: clr.onSurfaceVariant),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_detailDiscountLabel != null)
+            Tooltip(
+              message: isDiscountTappable ? "Bekijk actie details" : "",
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: isDiscountTappable ? _showPromotionDetails : null,
+                  borderRadius: BorderRadius.circular(8.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: clr.primary, 
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _detailDiscountLabel!,
+                          style: txt.labelLarge?.copyWith(color: clr.onPrimary, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (isDiscountTappable)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6.0),
+                            child: Icon(
+                              Icons.info_outline,
+                              size: (txt.labelLarge?.fontSize ?? 16.0),
+                              color: clr.onPrimary.withAlpha((0.8 * 255).round()),
+                            ),
+                          )
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
-  Widget _buildVariantSelector() {
+  Widget _buildVariantDropdownSelectors() {
     if (_productVariants.isEmpty || _isLoadingDetails) {
       return const SizedBox.shrink();
     }
@@ -482,57 +588,94 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (grouped.isEmpty) {
         return const SizedBox.shrink();
     }
-    final List<Widget> variantWidgets = [];
+    final List<Widget> dropdowns = [];
     final ColorScheme clr = Theme.of(context).colorScheme;
     final TextTheme txt = Theme.of(context).textTheme;
 
-
     grouped.forEach((groupName, variantsInGroup) {
-      variantWidgets.add(
+      ProductVariant? currentlySelectedVariant = _selectedVariants[groupName];
+      if (currentlySelectedVariant == null && variantsInGroup.any((v) => v.isSelected)) {
+          currentlySelectedVariant = variantsInGroup.firstWhere((v) => v.isSelected);
+      }
+      
+      dropdowns.add(
         Padding(
-          padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
-          child: Text(groupName, style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          padding: const EdgeInsets.only(top:20.0, bottom: 6.0),
+          child: Text(
+            groupName, 
+            style: txt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: clr.onSurface.withAlpha(220))
+          ),
         )
       );
-      variantWidgets.add(
-        Wrap(
-          spacing: 8.0,
-          runSpacing: 4.0,
-          children: variantsInGroup.map((variant) {
-            return ChoiceChip(
-              label: Text(variant.variantName),
-              selected: variant.isSelected,
-              onSelected: (selected) {
-                if (selected && !variant.isSelected) {
-                  _navigateToVariant(variant);
-                }
-              },
-              selectedColor: clr.primary.withAlpha((0.15 * 255).round()),
-              labelStyle: TextStyle(
-                color: variant.isSelected
-                    ? clr.primary
-                    : clr.onSurface.withAlpha((0.8 * 255).round()),
-                fontWeight: variant.isSelected ? FontWeight.bold : FontWeight.normal
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: variant.isSelected ? clr.primary : clr.outline.withAlpha((0.5 * 255).round()),
-                  width: variant.isSelected ? 1.5 : 1.0,
+      dropdowns.add(
+        DropdownButtonFormField<ProductVariant>(
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            fillColor: clr.surface,
+            filled: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10.0),
+              borderSide: BorderSide(color: clr.outline.withAlpha(100), width: 1.0),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10.0),
+              borderSide: BorderSide(color: clr.outline.withAlpha(100), width: 1.0),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10.0),
+              borderSide: BorderSide(color: clr.primary, width: 1.8),
+            ),
+          ),
+          value: currentlySelectedVariant,
+          hint: Text("Kies ${groupName.toLowerCase()}", style: TextStyle(color: clr.onSurface.withAlpha(150))),
+          isExpanded: true,
+          icon: Icon(Icons.keyboard_arrow_down_rounded, color: clr.primary, size: 28),
+          dropdownColor: clr.surfaceContainerHigh,
+          style: txt.bodyLarge?.copyWith(color: clr.onSurface),
+          items: variantsInGroup.map((ProductVariant variant) {
+            return DropdownMenuItem<ProductVariant>(
+              value: variant,
+              child: Text(
+                variant.variantName,
+                style: TextStyle(
+                  fontWeight: variant.isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: variant.isSelected ? clr.primary : clr.onSurface,
                 )
               ),
-              backgroundColor: clr.surfaceContainerLowest,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             );
           }).toList(),
+          onChanged: (ProductVariant? newValue) {
+            if (newValue != null && !newValue.isSelected) {
+              setState(() {
+                _selectedVariants[groupName] = newValue;
+              });
+              _navigateToVariant(newValue);
+            }
+          },
+          selectedItemBuilder: (BuildContext context) {
+             return variantsInGroup.map<Widget>((ProductVariant item) {
+               return Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  currentlySelectedVariant?.variantName ?? item.variantName,
+                  style: txt.bodyLarge?.copyWith(
+                    color: clr.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ));
+             }).toList();
+          },
         )
       );
     });
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: variantWidgets,
+    
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: dropdowns,
+      ),
     );
   }
 
@@ -559,30 +702,19 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
               displayArticleCode: _displayPageArticleCode,
               displayEan: _displayPageEan, 
               detailImageUrl: _detailImageUrl,
-              detailPriceString: _detailPriceString,
-              detailOldPriceString: _detailOldPriceString,
-              detailPriceUnit: _detailPriceUnit,
-              detailPricePerUnitString: _detailPricePerUnitString,
-              detailPricePerUnitLabel: _detailPricePerUnitLabel,
-              detailDiscountLabel: _detailDiscountLabel,
-              detailPromotionDescription: _detailPromotionDescription,
               orderStatus: _orderStatus,
               isLoadingDetails: _isLoadingDetails,
-              onShowPromotionDetails: _showPromotionDetails,
             ),
 
-            const SizedBox(height: 28),
+            _buildPriceAndActionSection(txt, Theme.of(context).colorScheme),
+
+            _buildVariantDropdownSelectors(),
+
+            const SizedBox(height: 24),
 
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: _buildVariantSelector(),
-            ),
-
-            if (_productVariants.isNotEmpty) const SizedBox(height: 12),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text('Voorraad:', style: txt.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: txt.headlineSmall?.color)),
+              child: Text('Winkelvoorraad:', style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
             ),
             const SizedBox(height: 12),
             Padding(
@@ -593,7 +725,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 storeStocks: _storeStocks,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Divider(thickness: 0.5),
@@ -623,8 +755,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
-        onTabSelected: _onBottomNavTabSelectedOnDetailsPage,
-      ),
+      onTabSelected: _onBottomNavTabSelectedOnDetailsPage,
+    ),
     );
   }
 }

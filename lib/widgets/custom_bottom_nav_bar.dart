@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum BottomNavTab { agenda, zaagtool, scanner }
+enum BottomNavTab { agenda, home, scanner }
 
 class CustomBottomNavBar extends StatelessWidget {
   final BottomNavTab? currentTab;
@@ -68,12 +68,12 @@ class CustomBottomNavBar extends StatelessWidget {
             tab: BottomNavTab.agenda,
             isSelected: currentTab == BottomNavTab.agenda,
           ),
-          _buildNavItem(
+          _buildNavItem( 
             context,
-            icon: Icons.content_cut_rounded,
-            label: 'Zaagplan',
-            tab: BottomNavTab.zaagtool,
-            isSelected: currentTab == BottomNavTab.zaagtool,
+            icon: Icons.home_outlined, 
+            label: 'Home',             
+            tab: BottomNavTab.home,   
+            isSelected: currentTab == BottomNavTab.home,
           ),
           _buildNavItem(
             context,

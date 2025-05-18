@@ -566,22 +566,24 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     );
   }
 
-  void _onBottomNavTabSelected(BottomNavTab tab) {
-    switch (tab) {
-      case BottomNavTab.agenda:
-        break;
-      case BottomNavTab.zaagtool:
-        Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
-        break;
-      case BottomNavTab.scanner:
-         Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen())).then((scanResult) {
-            if (scanResult != null && scanResult is String && scanResult.isNotEmpty && mounted) {
-                Navigator.pop(context, scanResult);
-            }
-         });
-        break;
-    }
+ void _onBottomNavTabSelected(BottomNavTab tab) {
+  switch (tab) {
+    case BottomNavTab.agenda:
+      break;
+    case BottomNavTab.home:
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context); 
+      }
+      break;
+    case BottomNavTab.scanner:
+       Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen())).then((scanResult) {
+          if (scanResult != null && scanResult is String && scanResult.isNotEmpty && mounted) {
+              Navigator.pop(context, scanResult); 
+          }
+       });
+      break;
   }
+}
 
   @override
   Widget build(BuildContext context)

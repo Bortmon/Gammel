@@ -90,18 +90,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _onBottomNavTabSelected(BottomNavTab tab) {
-    switch (tab) {
-      case BottomNavTab.agenda:
-        _navigateToScheduleScreen(context);
-        break;
-      case BottomNavTab.zaagtool:
-        Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
-        break;
-      case BottomNavTab.scanner:
-        _navigateToScanner();
-        break;
-    }
+  switch (tab) {
+    case BottomNavTab.agenda:
+      _navigateToScheduleScreen(context);
+      break;
+    case BottomNavTab.home:
+      break;
+    case BottomNavTab.scanner:
+      _navigateToScanner();
+      break;
   }
+}
 
   Future<void> _navigateToScanner() async
   {
@@ -599,6 +598,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
+        currentTab: BottomNavTab.home, 
         onTabSelected: _onBottomNavTabSelected,
       ),
     );

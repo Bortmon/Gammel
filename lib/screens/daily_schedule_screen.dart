@@ -3,10 +3,9 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 
-import '../widgets/custom_bottom_nav_bar.dart'; // Importeer de bottom nav bar
-import 'scanner_screen.dart'; // Voor navigatie
-// import 'zaag_tool_screen.dart'; // Als je die hebt
-import 'home_page.dart'; // Voor UnderConstructionScreen
+import '../widgets/custom_bottom_nav_bar.dart';
+import 'scanner_screen.dart';
+import 'home_page.dart'; // Voor UnderConstructionScreen en eventueel HomePage navigatie
 
 class DailyShiftEntry
 {
@@ -655,20 +654,24 @@ class _DailyScheduleScreenState extends State<DailyScheduleScreen>
   void _onBottomNavTabSelected(BottomNavTab tab) {
     switch (tab) {
       case BottomNavTab.agenda:
-        break;
-      case BottomNavTab.zaagtool:
-        Navigator.push(context, MaterialPageRoute(builder: (context) => const UnderConstructionScreen(pageName: "Zaagplan")));
+        break; 
+      case BottomNavTab.home:
+        Navigator.popUntil(context, (route) => route.isFirst);
         break;
       case BottomNavTab.scanner:
          Navigator.push(context, MaterialPageRoute(builder: (context) => const ScannerScreen())).then((scanResult) {
             if (scanResult != null && scanResult is String && scanResult.isNotEmpty && mounted) {
-                Navigator.pop(context, scanResult);
+                Navigator.popUntil(context, (route) {
+                  if (route.isFirst) {
+                    (route.settings.arguments as Map<String, dynamic>?)?['onScanResult']?.call(scanResult);
+                  }
+                  return route.isFirst;
+                });
             }
          });
         break;
     }
   }
-
 
   @override
   Widget build(BuildContext context)

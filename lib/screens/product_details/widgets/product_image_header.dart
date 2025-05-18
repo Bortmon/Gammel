@@ -3,39 +3,23 @@ import '../../../models/product.dart';
 import '../core/product_details_data.dart';
 
 class ProductImageHeader extends StatelessWidget {
-  final Product product;
+  final Product product; // TERUGGEZET
   final String displayTitle;
   final String displayArticleCode;
   final String? displayEan;
   final String? detailImageUrl;
-  final String? detailPriceString;
-  final String? detailOldPriceString;
-  final String? detailPriceUnit;
-  final String? detailPricePerUnitString;
-  final String? detailPricePerUnitLabel;
-  final String? detailDiscountLabel;
-  final String? detailPromotionDescription;
   final OrderabilityStatus orderStatus;
   final bool isLoadingDetails;
-  final VoidCallback onShowPromotionDetails;
 
   const ProductImageHeader({
     super.key,
-    required this.product,
+    required this.product, // TERUGGEZET
     required this.displayTitle,
     required this.displayArticleCode,
     this.displayEan,
     required this.detailImageUrl,
-    required this.detailPriceString,
-    this.detailOldPriceString,
-    this.detailPriceUnit,
-    this.detailPricePerUnitString,
-    this.detailPricePerUnitLabel,
-    this.detailDiscountLabel,
-    this.detailPromotionDescription,
     required this.orderStatus,
     required this.isLoadingDetails,
-    required this.onShowPromotionDetails,
   });
 
   Widget _buildCodeRow(IconData icon, String label, String value, TextTheme txt, ColorScheme clr) {
@@ -51,118 +35,6 @@ class ProductImageHeader extends StatelessWidget {
           Expanded(child: Text(value, style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 13), overflow: TextOverflow.ellipsis)),
         ],
       ),
-    );
-  }
-
-  Widget _buildPriceSection(TextTheme txt, ColorScheme clr, BuildContext context) {
-    final bool isDiscountTappable = detailPromotionDescription != null && detailPromotionDescription!.isNotEmpty;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Flexible(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (isLoadingDetails && detailPriceString == null)
-                Text("Prijs laden...", style: txt.headlineMedium?.copyWith(color: Colors.grey[600]))
-              else if (detailPriceString != null)
-                RichText(
-                  text: TextSpan(
-                    style: txt.headlineMedium?.copyWith(color: clr.onSurface, fontWeight: FontWeight.bold, fontSize: 28),
-                    children: [
-                      if (detailOldPriceString != null && detailOldPriceString != detailPriceString)
-                        TextSpan(
-                          text: '€$detailOldPriceString ',
-                          style: TextStyle(
-                            fontSize: txt.titleSmall?.fontSize ?? 14,
-                            decoration: TextDecoration.lineThrough,
-                            color: clr.onSurfaceVariant.withAlpha((0.7 * 255).round()),
-                            fontWeight: FontWeight.normal,
-                          ),
-                        ),
-                      TextSpan(
-                        text: '€$detailPriceString',
-                        style: TextStyle(
-                          color: clr.secondary, 
-                        ),
-                      ),
-                      if (detailPriceUnit != null)
-                        TextSpan(
-                          text: ' $detailPriceUnit',
-                          style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant, fontWeight: FontWeight.normal, fontSize: 15)
-                        )
-                    ],
-                  ),
-                )
-              else
-                Text('Prijs onbekend', style: txt.bodyLarge?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600])),
-
-              if (detailPricePerUnitString != null && detailPricePerUnitString != detailPriceString)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Text(
-                    '€$detailPricePerUnitString ${(detailPricePerUnitLabel ?? "p/eenheid").toLowerCase()}',
-                    style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, color: clr.onSurfaceVariant),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        if (detailDiscountLabel != null)
-          Padding(
-            padding: const EdgeInsets.only(left: 12.0),
-            child: Tooltip(
-              message: isDiscountTappable ? "Bekijk actie details" : "",
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: isDiscountTappable ? onShowPromotionDetails : null,
-                  borderRadius: BorderRadius.circular(8.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: clr.primary, 
-                      borderRadius: BorderRadius.circular(8.0),
-                       boxShadow:
-                       [
-                         BoxShadow(
-                           color: Colors.black.withAlpha((0.08 * 255).round()),
-                           blurRadius: 5,
-                           offset: const Offset(0, 2),
-                         )
-                       ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children:
-                      [
-                        Text(
-                          detailDiscountLabel!,
-                          style: txt.labelLarge?.copyWith(
-                            color: clr.onPrimary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (isDiscountTappable)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6.0),
-                            child: Icon(
-                              Icons.info_outline,
-                              size: (txt.labelLarge?.fontSize ?? 16.0),
-                              color: clr.onPrimary.withAlpha((0.8 * 255).round()),
-                            ),
-                          )
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
     );
   }
 
@@ -225,8 +97,8 @@ class ProductImageHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 120,
-                height: 120,
+                width: 110,
+                height: 110,
                 decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12.0),
                     border: Border.all(color: clr.outline.withAlpha((0.3 * 255).round()), width: 0.5)
@@ -253,9 +125,9 @@ class ProductImageHeader extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     Text(displayTitle, style: txt.titleLarge?.copyWith(height: 1.3, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     _buildCodeRow(Icons.inventory_2_outlined, 'Art:', displayArticleCode, txt, clr),
-                    if (displayEan != null)
+                    if (displayEan != null) 
                       Padding(
                         padding: const EdgeInsets.only(top: 2.0),
                         child: _buildCodeRow(Icons.barcode_reader, 'EAN:', displayEan!, txt, clr),
@@ -265,17 +137,11 @@ class ProductImageHeader extends StatelessWidget {
               ),
             ],
           ),
-
-          const SizedBox(height: 20),
-
+          const SizedBox(height: 12),
           if (!isLoadingDetails)
             _buildOrderStatusChipWidget(orderStatus, txt, clr)
           else
-            const SizedBox(height: 36),
-
-          const SizedBox(height: 16),
-
-          _buildPriceSection(txt, clr, context),
+            const SizedBox(height: 36), 
         ],
       ),
     );
