@@ -64,9 +64,6 @@ class MyApp extends StatefulWidget
 
 class _MyAppState extends State<MyApp>
 {
-  // ThemeMode is niet meer nodig als we maar één thema hebben
-  // ThemeMode _themeMode = ThemeMode.dark;
-
   final _storage = const FlutterSecureStorage();
   String? _authToken;
   String? _employeeId;
@@ -78,12 +75,16 @@ class _MyAppState extends State<MyApp>
   final String _userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
-  static const Color wcTrackerPrimaryAccentColor = Color(0xFF4A90E2);
-  static const Color wcTrackerScaffoldBackgroundColor = Color(0xFF212121);
-  static const Color wcTrackerCardBackgroundColor = Color(0xFF2C2C2C);
-  static const Color wcTrackerMainTextColor = Colors.white; // Of Color(0xFFF5F5F5) voor net-niet-wit
-  static const Color wcTrackerSecondaryTextColor = Color(0xFFE0E0E0);
-  static const Color wcTrackerMoneyDisplayColor = Color(0xFF34C759);
+  static const Color roosterZeerDonkerGrijs = Color.fromARGB(255, 23, 22, 22);
+  static const Color roosterDonkerGrijsBlok = Color.fromARGB(255, 38, 37, 37);
+  static const Color roosterBlauwAccent = Color.fromARGB(255, 0, 132, 255);   
+  static const Color roosterTekstPrimair = Color(0xFFEAEFF3);  
+  static const Color roosterTekstSubtiel = Color.fromARGB(255, 255, 255, 255);  
+  static const Color roosterGroenTijd = Color(0xFF2ECC71);    
+  static const Color roosterErrorColor = Color(0xFFE53E3E);    
+  static const Color roosterOnErrorColor = Colors.white;
+  static const Color roosterOutline = Color.fromARGB(255, 28, 26, 26);      
+
 
   @override
   void initState()
@@ -441,60 +442,60 @@ class _MyAppState extends State<MyApp>
     return success;
   }
 
-  // Verwijder changeThemeMode en toggleThemeMode als je geen thema-wisselaar meer nodig hebt
-  // void changeThemeMode(ThemeMode m)
-  // {
-  //   setState(()
-  //   {
-  //     _themeMode = m;
-  //   });
-  // }
-
-  // void toggleThemeMode()
-  // {
-  //   final newMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-  //   changeThemeMode(newMode);
-  // }
-
   @override
   Widget build(BuildContext context)
   {
-     ColorScheme darkAppColorScheme = ColorScheme.fromSeed(
-      seedColor: wcTrackerPrimaryAccentColor,
+     ColorScheme darkAppColorScheme = ColorScheme(
       brightness: Brightness.dark,
-      background: wcTrackerScaffoldBackgroundColor,
-      surface: wcTrackerCardBackgroundColor,
-      onBackground: wcTrackerMainTextColor,
-      onSurface: wcTrackerMainTextColor,
-      primary: wcTrackerPrimaryAccentColor,
-      onPrimary: Colors.white,
-      secondary: wcTrackerMoneyDisplayColor,
-      onSecondary: Colors.white,
-      error: Colors.redAccent.shade100,
-      onError: Colors.black,
-     ).copyWith(
-        surfaceContainerLow: wcTrackerCardBackgroundColor, // Zekerstellen dat secties deze kleur krijgen
-        // Je kunt hier nog andere surfaceContainer varianten expliciet zetten als fromSeed ze niet naar wens maakt
-        // surfaceContainer: Color.lerp(wcTrackerCardBackgroundColor, wcTrackerMainTextColor, 0.05)!,
-        // surfaceContainerHigh: Color.lerp(wcTrackerCardBackgroundColor, wcTrackerMainTextColor, 0.1)!,
+      primary: roosterBlauwAccent,
+      onPrimary: Colors.white, 
+      secondary: const Color.fromARGB(255, 0, 226, 94),
+      onSecondary: Colors.white, 
+      error: roosterErrorColor,
+      onError: roosterOnErrorColor,
+      background: roosterZeerDonkerGrijs,
+      onBackground: roosterTekstPrimair,
+      surface: roosterDonkerGrijsBlok, 
+      onSurface: roosterTekstPrimair,
+      surfaceVariant: Color.lerp(roosterDonkerGrijsBlok, Colors.black, 0.2)!,
+      onSurfaceVariant: roosterTekstSubtiel,
+      outline: roosterOutline,
+      outlineVariant: Color.lerp(roosterOutline, roosterZeerDonkerGrijs, 0.3)!,
+      shadow: Colors.black.withAlpha(30),
+      surfaceTint: Colors.transparent,
+      inverseSurface: roosterTekstPrimair,
+      onInverseSurface: roosterZeerDonkerGrijs,
+      primaryContainer: roosterBlauwAccent.withAlpha(40),
+      onPrimaryContainer: roosterBlauwAccent,
+      secondaryContainer: roosterGroenTijd.withAlpha(40),
+      onSecondaryContainer: roosterGroenTijd,
+      tertiaryContainer: Colors.grey.shade800,
+      onTertiaryContainer: Colors.grey.shade400,
+      errorContainer: roosterErrorColor.withAlpha(40),
+      onErrorContainer: roosterErrorColor,
+      surfaceContainerLowest: Color.lerp(const Color.fromARGB(255, 26, 25, 25), roosterDonkerGrijsBlok, 0.3)!,
+      surfaceContainerLow: roosterDonkerGrijsBlok, 
+      surfaceContainer: Color.lerp(roosterDonkerGrijsBlok, roosterTekstPrimair, 0.04)!,
+      surfaceContainerHigh: Color.lerp(roosterDonkerGrijsBlok, roosterTekstPrimair, 0.07)!,
+      surfaceContainerHighest: Color.lerp(roosterDonkerGrijsBlok, roosterTekstPrimair, 0.10)!,
+
      );
 
      final ThemeData gammelDarkTheme = ThemeData(
-        useMaterial3: true, // Blijf Material 3 gebruiken
+        useMaterial3: true,
         fontFamily: 'Inter',
         colorScheme: darkAppColorScheme,
         scaffoldBackgroundColor: darkAppColorScheme.background,
-
         appBarTheme: AppBarTheme(
           backgroundColor: darkAppColorScheme.surface,
-          elevation: 0,
+          elevation: 0, 
           titleTextStyle: TextStyle(
             color: darkAppColorScheme.onSurface,
             fontSize: 20,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
             fontFamily: 'Inter',
           ),
-          iconTheme: IconThemeData(color: darkAppColorScheme.primary),
+          iconTheme: IconThemeData(color: darkAppColorScheme.onSurfaceVariant),
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -527,57 +528,67 @@ class _MyAppState extends State<MyApp>
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Color.lerp(darkAppColorScheme.background, darkAppColorScheme.surface, 0.3),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          fillColor: darkAppColorScheme.surfaceContainerLowest,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10.0),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10.0),
-            borderSide: BorderSide(color: darkAppColorScheme.surface.withAlpha(128), width: 0.8),
+            borderSide: BorderSide(color: darkAppColorScheme.outline.withAlpha(100), width: 0.8),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10.0),
             borderSide: BorderSide(color: darkAppColorScheme.primary, width: 1.5),
           ),
-          labelStyle: TextStyle(color: wcTrackerSecondaryTextColor.withAlpha(200), fontFamily: 'Inter'),
-          hintStyle: TextStyle(color: wcTrackerSecondaryTextColor.withAlpha(150), fontFamily: 'Inter'),
-          prefixIconColor: darkAppColorScheme.primary.withAlpha(220),
+          labelStyle: TextStyle(color: darkAppColorScheme.onSurfaceVariant, fontFamily: 'Inter'),
+          hintStyle: TextStyle(color: darkAppColorScheme.onSurfaceVariant.withAlpha(180), fontFamily: 'Inter'),
+          prefixIconColor: darkAppColorScheme.onSurfaceVariant,
         ),
         cardTheme: CardTheme(
           elevation: 0,
-          color: darkAppColorScheme.surface, // Gebruik surface, wat wcTrackerCardBackgroundColor is
+          color: darkAppColorScheme.surface, 
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12.0),
+            borderRadius: BorderRadius.circular(8.0),
           ),
-          margin: const EdgeInsets.symmetric(vertical: 8.0),
+          margin: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 0),
         ),
         textTheme: TextTheme(
-          displayLarge: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.bold, fontSize: 32),
-          displayMedium: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.bold, fontSize: 28),
-          displaySmall: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.bold, fontSize: 24),
-          headlineLarge: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.bold, fontSize: 22),
-          headlineMedium: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.bold, fontSize: 20),
-          headlineSmall: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.w600, fontSize: 18),
-          titleLarge: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.w600, fontSize: 16),
-          titleMedium: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontWeight: FontWeight.w500, fontSize: 14),
-          titleSmall: TextStyle(fontFamily: 'Inter', color: wcTrackerSecondaryTextColor, fontWeight: FontWeight.w500, fontSize: 12),
-          bodyLarge: TextStyle(fontFamily: 'Inter', color: wcTrackerMainTextColor, fontSize: 16, height: 1.5),
-          bodyMedium: TextStyle(fontFamily: 'Inter', color: wcTrackerSecondaryTextColor, fontSize: 14, height: 1.4),
-          bodySmall: TextStyle(fontFamily: 'Inter', color: wcTrackerSecondaryTextColor.withAlpha(200), fontSize: 12, height: 1.3),
+          headlineSmall: TextStyle(fontFamily: 'Inter', color: roosterTekstPrimair, fontWeight: FontWeight.w600, fontSize: 18),
+          titleLarge: TextStyle(fontFamily: 'Inter', color: roosterTekstPrimair, fontWeight: FontWeight.bold, fontSize: 17), 
+          titleMedium: TextStyle(fontFamily: 'Inter', color: roosterTekstPrimair, fontWeight: FontWeight.w500, fontSize: 15), 
+          titleSmall: TextStyle(fontFamily: 'Inter', color: roosterBlauwAccent, fontWeight: FontWeight.w600, fontSize: 14), 
+          bodyLarge: TextStyle(fontFamily: 'Inter', color: roosterTekstPrimair, fontSize: 16, height: 1.5),
+          bodyMedium: TextStyle(fontFamily: 'Inter', color: roosterTekstSubtiel, fontSize: 14, height: 1.4), 
+          bodySmall: TextStyle(fontFamily: 'Inter', color: roosterTekstSubtiel.withAlpha(220), fontSize: 12, height: 1.3), 
           labelLarge: TextStyle(fontFamily: 'Inter', color: darkAppColorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 16),
+          labelMedium: TextStyle(fontFamily: 'Inter', color: darkAppColorScheme.onSecondary, fontWeight: FontWeight.bold, fontSize: 13), 
+          labelSmall: TextStyle(fontFamily: 'Inter', color: darkAppColorScheme.onPrimary, fontWeight: FontWeight.bold, fontSize: 11),
         ),
         iconTheme: IconThemeData(
-          color: wcTrackerSecondaryTextColor.withAlpha(220),
+          color: roosterTekstSubtiel,
         ),
         dividerTheme: DividerThemeData(
-          color: wcTrackerMainTextColor.withAlpha(50),
-          thickness: 0.5,
+          color: roosterOutline.withAlpha(80),
+          thickness: 1,
+        ),
+        chipTheme: ChipThemeData( 
+          backgroundColor: darkAppColorScheme.surfaceContainerHighest,
+          disabledColor: Colors.grey.shade800,
+          selectedColor: darkAppColorScheme.primary,
+          checkmarkColor: darkAppColorScheme.onPrimary,
+          labelStyle: TextStyle(fontFamily: 'Inter', color: roosterTekstSubtiel, fontSize: 13, fontWeight: FontWeight.w500),
+          secondaryLabelStyle: TextStyle(fontFamily: 'Inter', color: darkAppColorScheme.onPrimary, fontWeight: FontWeight.w600, fontSize: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8.0), 
+            side: BorderSide.none
+          ),
         ),
         extensions: <ThemeExtension<dynamic>>[
           const MyThemeColors(
-            moneyColor: wcTrackerMoneyDisplayColor,
+            moneyColor: roosterGroenTijd,
           ),
         ],
      );

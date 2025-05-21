@@ -454,7 +454,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       }
       catch (e, s)
       {
-        print("[Parser Results] Error parsing product tile: $e\nStack: $s");
+        // no-op
       }
     }
     return products;
@@ -462,14 +462,18 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> _navigateToDetails(BuildContext context, Product product) async
   {
-    final result = await Navigator.push<String>(
+    final dynamic result = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => ProductDetailsScreen(product: product)),
     );
-    if (mounted && result != null && result.isNotEmpty)
-    {
+
+    if (!mounted) return;
+
+    if (result == 'ACTION_NAVIGATE_TO_AGENDA') { 
+      _navigateToScheduleScreen(context);
+    } else if (result is String && result.isNotEmpty) {
       _searchController.text = result;
-       if (_tabController.index != 0) {
+      if (_tabController.index != 0) {
         _tabController.animateTo(0);
       } else {
         _searchProducts(result);
@@ -506,25 +510,25 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         title: const Text('Gammel'),
         actions: const [],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(kToolbarHeight - 8),
+          preferredSize: const Size.fromHeight(kToolbarHeight - 12),
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 6.0),
             decoration: BoxDecoration(
-                color: clr.surface.withAlpha(200),
-                borderRadius: BorderRadius.circular(10.0)
+                color: clr.surface.withAlpha(250),
+                borderRadius: BorderRadius.circular(4.0)
             ),
             child: TabBar(
               controller: _tabController,
               indicator: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8.0),
-                  color: clr.primary.withAlpha((0.25 * 255).round())
+                  borderRadius: BorderRadius.circular(4.0),
+                  color: clr.primary.withAlpha(0)
               ),
               indicatorPadding: const EdgeInsets.all(4.0),
               indicatorSize: TabBarIndicatorSize.tab,
               labelColor: clr.primary,
-              labelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 14.5),
-              unselectedLabelColor: clr.onSurface.withAlpha((0.7 * 255).round()),
-              unselectedLabelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 14.5),
+              labelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.bold, fontSize: 17),
+              unselectedLabelColor: clr.onSurface.withAlpha((10 * 255).round()),
+              unselectedLabelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, fontSize: 17),
               tabs: [
                 const Tab(text: 'Algemeen'),
                 Tab(text: _filterStoreNameHaarlem),

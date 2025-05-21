@@ -37,6 +37,10 @@ class ProductDetailsScrapeResult
   final String? scrapedTitle;
   final String? scrapedArticleCode;
   final String? scrapedEan;
+  final List<String> galleryImageUrls;
+  final String? deliveryCost;
+  final String? deliveryFreeFrom;
+  final String? deliveryTime;
 
   ProductDetailsScrapeResult(
   {
@@ -55,5 +59,9 @@ class ProductDetailsScrapeResult
     this.scrapedTitle,
     this.scrapedArticleCode,
     this.scrapedEan,
+    this.galleryImageUrls = const [],
+    this.deliveryCost,
+    this.deliveryFreeFrom,
+    this.deliveryTime,
   });
 }

@@ -23,7 +23,7 @@ class ProductStockList extends StatelessWidget
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow, // Subtiel andere achtergrond
+        color: colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12.0),
       ),
       child: Column(
@@ -104,13 +104,13 @@ class ProductStockList extends StatelessWidget
         else if (stockCount > 5)
         {
           icon = Icons.check_circle_outline_rounded;
-          color = Colors.green.shade700;
+          color = const Color.fromARGB(255, 0, 209, 10);
           text = "$stockCount stuks";
         }
         else if (stockCount > 0)
         {
           icon = Icons.warning_amber_rounded;
-          color = Colors.orange.shade800;
+          color = const Color.fromARGB(255, 255, 192, 141);
           text = "$stockCount stuks (laag)";
         }
         else
@@ -122,12 +122,12 @@ class ProductStockList extends StatelessWidget
 
         children.add(
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0), // Iets meer ruimte
+            padding: const EdgeInsets.symmetric(vertical: 6.0), 
             child: Row(
               children:
               [
                 Icon(icon, color: color, size: 20),
-                const SizedBox(width: 12), // Iets meer ruimte
+                const SizedBox(width: 5), 
                 Expanded(
                   child: Text(
                     storeName,

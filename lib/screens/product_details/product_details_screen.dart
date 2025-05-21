@@ -8,11 +8,11 @@ import '../../models/product.dart';
 import '../scanner_screen.dart';
 import 'core/product_details_data.dart';
 import 'core/product_html_parser.dart';
-import 'widgets/product_image_header.dart';
 import 'widgets/product_stock_list.dart';
 import 'widgets/product_info_section.dart';
 import '../../widgets/custom_bottom_nav_bar.dart';
-import '../home_page.dart';
+import '../home_page.dart'; 
+import 'widgets/product_gallery_view.dart';
 
 class ProductDetailsScreen extends StatefulWidget
 {
@@ -23,11 +23,11 @@ class ProductDetailsScreen extends StatefulWidget
   State<ProductDetailsScreen> createState() => _ProductDetailsScreenState();
 }
 
-class _ProductDetailsScreenState extends State<ProductDetailsScreen>
-{
+class _ProductDetailsScreenState extends State<ProductDetailsScreen> with TickerProviderStateMixin {
   String _displayPageTitle = "Laden...";
   String _displayPageArticleCode = "Laden...";
   String? _displayPageEan;
+  String? _productDimensionsFromParse; 
   String? _description;
   String? _specifications;
   String? _detailImageUrl;
@@ -46,6 +46,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   OrderabilityStatus _orderStatus = OrderabilityStatus.unknown;
   List<ProductVariant> _productVariants = [];
   Map<String, ProductVariant?> _selectedVariants = {};
+  List<String> _galleryImageUrls = [];
+  String? _deliveryCost;
+  String? _deliveryFreeFrom;
+  String? _deliveryTime;
+  late TabController _availabilityTabController;
+  int _availabilityTabIndex = 0;
+  Map<String, bool> _variantGroupExpandedState = {}; // TOEGEVOEGD
+
 
   static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
   final Map<String, String> _targetStores =
@@ -67,6 +75,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   void initState()
   {
     super.initState();
+    _availabilityTabController = TabController(length: 2, vsync: this);
+    _availabilityTabController.addListener(() {
+      if (_availabilityTabController.indexIsChanging) return;
+      if (mounted) {
+        setState(() {
+          _availabilityTabIndex = _availabilityTabController.index;
+        });
+      }
+    });
+
     _displayPageTitle = widget.product.title;
     _displayPageArticleCode = widget.product.articleCode;
     _displayPageEan = widget.product.eanCode;
@@ -84,9 +102,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         _displayPageArticleCode = widget.product.articleCode;
         _displayPageEan = widget.product.eanCode;
         _selectedVariants = {};
+        _productDimensionsFromParse = null; 
+        _variantGroupExpandedState = {}; // Reset ook deze state
       });
       _initializeProductData(widget.product);
     }
+  }
+
+  @override
+  void dispose() {
+    _availabilityTabController.dispose();
+    super.dispose();
   }
 
   void _initializeProductData(Product product)
@@ -104,6 +130,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
       _detailPricePerUnitLabel = product.pricePerUnitLabel;
       _orderStatus = OrderabilityStatus.unknown;
       _productVariants = [];
+      _galleryImageUrls = [];
+      _deliveryCost = null;
+      _deliveryFreeFrom = null;
+      _deliveryTime = null;
       _storeStocks = {};
       _stockError = null;
       _detailsError = null;
@@ -162,12 +192,27 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
                 initialSelectedVariants[variant.groupName] = variant;
             }
         }
+        
+        String? parsedDimensions;
+        if (result.specifications != null) {
+            final RegExp dimRegex = RegExp(r'Afmetingen:\s*([^\n]+)', caseSensitive: false);
+            final RegExp thicknessRegex = RegExp(r'Dikte:\s*([^\n]+)', caseSensitive: false);
+            final dimMatch = dimRegex.firstMatch(result.specifications!);
+            final thicknessMatch = thicknessRegex.firstMatch(result.specifications!);
+            if (dimMatch != null) {
+                parsedDimensions = dimMatch.group(1)?.trim();
+            } else if (thicknessMatch != null) {
+                parsedDimensions = thicknessMatch.group(1)?.trim();
+            }
+        }
+
 
         setState(()
         {
           _displayPageTitle = result.scrapedTitle ?? _displayPageTitle;
           _displayPageArticleCode = finalArticleCode;
           _displayPageEan = finalEanCode;
+          _productDimensionsFromParse = parsedDimensions;
 
           _description = result.description ?? _description;
           _specifications = result.specifications ?? _specifications;
@@ -181,7 +226,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
           _detailPromotionDescription = result.promotionDescription ?? _detailPromotionDescription;
           _orderStatus = result.status;
           _productVariants = result.variants;
+          _galleryImageUrls = result.galleryImageUrls;
+           if (_detailImageUrl == null && result.galleryImageUrls.isNotEmpty) {
+            _detailImageUrl = result.galleryImageUrls.first;
+          }
           _selectedVariants = initialSelectedVariants;
+          _deliveryCost = result.deliveryCost;
+          _deliveryFreeFrom = result.deliveryFreeFrom;
+          _deliveryTime = result.deliveryTime;
           _isLoadingDetails = false;
 
           if (_description == null && _specifications == null && result.priceString == null && _productVariants.isEmpty && result.scrapedTitle == null)
@@ -466,112 +518,61 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
    }
 
   void _onBottomNavTabSelectedOnDetailsPage(BottomNavTab tab) {
-  switch (tab) {
-    case BottomNavTab.agenda:
-      Navigator.push(context, MaterialPageRoute(builder: (context) =>
-        Scaffold(appBar: AppBar(title: const Text("Agenda (Placeholder)")), body: const Center(child: Text("Agenda Scherm"))),
-      ));
-      break;
-    case BottomNavTab.home:
-      Navigator.popUntil(context, (route) => route.isFirst);
-      break;
-    case BottomNavTab.scanner:
-      _navigateToScannerFromDetailsAndReplace();
-      break;
+    switch (tab) {
+      case BottomNavTab.agenda:
+        Navigator.pop(context, 'ACTION_NAVIGATE_TO_AGENDA');
+        break;
+      case BottomNavTab.home:
+        Navigator.popUntil(context, (route) => route.isFirst);
+        break;
+      case BottomNavTab.scanner:
+        _navigateToScannerFromDetailsAndReplace();
+        break;
+    }
   }
-}
 
-  Widget _buildPriceAndActionSection(TextTheme txt, ColorScheme clr) {
-    final bool isDiscountTappable = _detailPromotionDescription != null && _detailPromotionDescription!.isNotEmpty;
+  void _toggleVariantGroupExpanded(String groupName) {
+    setState(() {
+      _variantGroupExpandedState[groupName] = !(_variantGroupExpandedState[groupName] ?? false);
+    });
+  }
+
+  Widget _buildProductHeaderSection(TextTheme txt, ColorScheme clr) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_isLoadingDetails && _detailPriceString == null)
-                  Text("Prijs laden...", style: txt.headlineSmall?.copyWith(color: Colors.grey[600]))
-                else if (_detailPriceString != null)
-                  RichText(
-                    text: TextSpan(
-                      style: txt.headlineSmall?.copyWith(color: clr.onSurface, fontWeight: FontWeight.bold),
-                      children: [
-                        if (_detailOldPriceString != null && _detailOldPriceString != _detailPriceString)
-                          TextSpan(
-                            text: '€$_detailOldPriceString ',
-                            style: TextStyle(
-                              fontSize: txt.titleMedium?.fontSize,
-                              decoration: TextDecoration.lineThrough,
-                              color: clr.onSurfaceVariant.withAlpha((0.7 * 255).round()),
-                              fontWeight: FontWeight.normal,
-                            ),
-                          ),
-                        TextSpan(
-                          text: '€$_detailPriceString',
-                          style: TextStyle(color: clr.secondary, fontSize: 26),
-                        ),
-                        if (_detailPriceUnit != null)
-                          TextSpan(
-                            text: ' $_detailPriceUnit',
-                            style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant, fontWeight: FontWeight.normal)
-                          )
-                      ],
-                    ),
-                  )
-                else
-                  Text('Prijs onbekend', style: txt.bodyLarge?.copyWith(fontStyle: FontStyle.italic, color: Colors.grey[600])),
-
-                if (_detailPricePerUnitString != null && _detailPricePerUnitString != _detailPriceString)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Text(
-                      '€$_detailPricePerUnitString ${(_detailPricePerUnitLabel ?? "p/eenheid").toLowerCase()}',
-                      style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w500, color: clr.onSurfaceVariant),
-                    ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _displayPageTitle,
+                  style: txt.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: clr.onBackground),
+                ),
+              ),
+              if (_displayPageArticleCode != "Laden..." && _displayPageArticleCode != "Code?")
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: clr.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-              ],
-            ),
-          ),
-          if (_detailDiscountLabel != null)
-            Tooltip(
-              message: isDiscountTappable ? "Bekijk actie details" : "",
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: isDiscountTappable ? _showPromotionDetails : null,
-                  borderRadius: BorderRadius.circular(8.0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: clr.primary, 
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _detailDiscountLabel!,
-                          style: txt.labelLarge?.copyWith(color: clr.onPrimary, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (isDiscountTappable)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6.0),
-                            child: Icon(
-                              Icons.info_outline,
-                              size: (txt.labelLarge?.fontSize ?? 16.0),
-                              color: clr.onPrimary.withAlpha((0.8 * 255).round()),
-                            ),
-                          )
-                      ],
-                    ),
+                  child: Text(
+                    "Art: $_displayPageArticleCode",
+                    style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant, fontWeight: FontWeight.w500),
                   ),
                 ),
+            ],
+          ),
+          if (_productDimensionsFromParse != null && _productDimensionsFromParse!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Text(
+                _productDimensionsFromParse!,
+                style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant),
               ),
             ),
         ],
@@ -579,7 +580,214 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     );
   }
 
-  Widget _buildVariantDropdownSelectors() {
+  Widget _buildImageAndPriceSection(TextTheme txt, ColorScheme clr) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: AspectRatio(
+              aspectRatio: 1, 
+              child: GestureDetector(
+                onTap: () {
+                  if (_galleryImageUrls.isNotEmpty) {
+                    int initialIdx = 0;
+                    if (_detailImageUrl != null && _galleryImageUrls.contains(_detailImageUrl)) {
+                        initialIdx = _galleryImageUrls.indexOf(_detailImageUrl!);
+                    }
+                    showDialog(
+                      context: context,
+                      barrierColor: Colors.black.withAlpha((0.85 * 255).round()),
+                      useSafeArea: false,
+                      builder: (BuildContext dialogContext) {
+                        return Dialog(
+                          backgroundColor: Colors.black,
+                          insetPadding: EdgeInsets.zero,
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+                          child: ProductGalleryDialogContent(
+                            imageUrls: _galleryImageUrls,
+                            initialIndex: initialIdx,
+                          ),
+                        );
+                      },
+                    );
+                  }
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: clr.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
+                  child: _isLoadingDetails && _detailImageUrl == null
+                    ? Center(child: CircularProgressIndicator(color: clr.primary))
+                    : (_detailImageUrl != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12.0),
+                            child: Image.network(
+                              _detailImageUrl!,
+                              fit: BoxFit.contain,
+                              loadingBuilder: (ctx, child, p) => (p == null)
+                                  ? child
+                                  : Center(child: CircularProgressIndicator(value: p.expectedTotalBytes != null ? p.cumulativeBytesLoaded / p.expectedTotalBytes! : null, strokeWidth: 2.0, color: clr.primary,)),
+                              errorBuilder: (ctx, err, st) => Center(child: Icon(Icons.broken_image_outlined, size: 50, color: clr.onSurfaceVariant.withAlpha(100))),
+                            ),
+                          )
+                        : Center(child: Icon(Icons.image_not_supported_outlined, size: 50, color: clr.onSurfaceVariant.withAlpha(100)))),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 3, 
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                if (_isLoadingDetails && _detailPriceString == null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0), 
+                    child: Text("Prijs laden...", style: txt.titleLarge?.copyWith(color: clr.onSurfaceVariant))
+                  )
+                else if (_detailPriceString != null)
+                  RichText(
+                    text: TextSpan(
+                      style: txt.headlineSmall?.copyWith(color: clr.onSurface, fontWeight: FontWeight.bold),
+                      children: [
+                        if (_detailOldPriceString != null && _detailOldPriceString!.isNotEmpty && _detailOldPriceString != _detailPriceString)
+                          TextSpan(
+                            text: '€$_detailOldPriceString ',
+                            style: TextStyle(
+                              fontSize: txt.titleMedium?.fontSize,
+                              decoration: TextDecoration.lineThrough,
+                              color: clr.onSurfaceVariant.withAlpha(180),
+                              fontWeight: FontWeight.normal,
+                            ),
+                          ),
+                        TextSpan(
+                          text: '€$_detailPriceString',
+                          style: TextStyle(color: clr.secondary, fontSize: 28, fontWeight: FontWeight.bold),
+                        ),
+                        if (_detailPriceUnit != null && _detailPriceUnit!.isNotEmpty)
+                          TextSpan(
+                            text: ' $_detailPriceUnit',
+                            style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant)
+                          )
+                      ],
+                    ),
+                  )
+                else
+                  Padding(
+                     padding: const EdgeInsets.only(top: 8.0),
+                    child: Text('Prijs onbekend', style: txt.titleLarge?.copyWith(fontStyle: FontStyle.italic, color: clr.onSurfaceVariant))
+                  ),
+
+                if (_detailPricePerUnitString != null && _detailPricePerUnitString!.isNotEmpty && _detailPricePerUnitString != _detailPriceString)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4.0),
+                    child: Text(
+                      '€$_detailPricePerUnitString ${(_detailPricePerUnitLabel ?? "p/eenheid").toLowerCase()}',
+                      style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w500, color: clr.onSurfaceVariant),
+                    ),
+                  ),
+                
+                if (_displayPageEan != null && _displayPageEan!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10.0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.barcode_reader, size: 16, color: clr.onSurfaceVariant.withAlpha(150)),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text(_displayPageEan!, style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant), overflow: TextOverflow.ellipsis,)),
+                      ],
+                    ),
+                  ),
+                
+                if (!_isLoadingDetails && _orderStatus != OrderabilityStatus.unknown)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10.0),
+                    child: Chip(
+                      avatar: Icon(
+                        _orderStatus == OrderabilityStatus.onlineAndCC ? Icons.local_shipping_outlined : 
+                        _orderStatus == OrderabilityStatus.clickAndCollectOnly ? Icons.store_mall_directory_outlined :
+                        _orderStatus == OrderabilityStatus.outOfAssortment ? Icons.highlight_off_outlined : Icons.help_outline,
+                        size: 16, 
+                        color: _orderStatus == OrderabilityStatus.onlineAndCC ? clr.onPrimaryContainer : 
+                               _orderStatus == OrderabilityStatus.clickAndCollectOnly ? clr.onTertiaryContainer :
+                               _orderStatus == OrderabilityStatus.outOfAssortment ? clr.onErrorContainer : clr.onSurfaceVariant,
+                      ),
+                      label: Text(
+                        _orderStatus == OrderabilityStatus.onlineAndCC ? "Online & Click/Collect" :
+                        _orderStatus == OrderabilityStatus.clickAndCollectOnly ? "Alleen Click & Collect" :
+                        _orderStatus == OrderabilityStatus.outOfAssortment ? "Uit assortiment" : "Status onbekend",
+                        style: txt.labelSmall?.copyWith(
+                          color: _orderStatus == OrderabilityStatus.onlineAndCC ? clr.onPrimaryContainer : 
+                                 _orderStatus == OrderabilityStatus.clickAndCollectOnly ? clr.onTertiaryContainer :
+                                 _orderStatus == OrderabilityStatus.outOfAssortment ? clr.onErrorContainer : clr.onSurfaceVariant,
+                          fontWeight: FontWeight.w500
+                        )
+                      ),
+                      backgroundColor: _orderStatus == OrderabilityStatus.onlineAndCC ? clr.primaryContainer.withAlpha(0) : 
+                                       _orderStatus == OrderabilityStatus.clickAndCollectOnly ? clr.tertiaryContainer.withAlpha(0) :
+                                       _orderStatus == OrderabilityStatus.outOfAssortment ? clr.errorContainer.withAlpha(0) : clr.surfaceVariant.withAlpha(0),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      side: BorderSide.none,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                 if (_detailDiscountLabel != null && _detailDiscountLabel!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10.0),
+                      child: Tooltip(
+                        message: (_detailPromotionDescription != null && _detailPromotionDescription!.isNotEmpty) ? "Bekijk actie details" : "",
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: (_detailPromotionDescription != null && _detailPromotionDescription!.isNotEmpty) ? _showPromotionDetails : null,
+                            borderRadius: BorderRadius.circular(8.0),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: clr.primary, 
+                                borderRadius: BorderRadius.circular(8.0),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    _detailDiscountLabel!,
+                                    style: txt.labelMedium?.copyWith(color: clr.onPrimary, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (_detailPromotionDescription != null && _detailPromotionDescription!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(left: 4.0),
+                                      child: Icon(
+                                        Icons.info_outline,
+                                        size: (txt.labelMedium?.fontSize ?? 14.0) + 2,
+                                        color: clr.onPrimary.withAlpha((0.8 * 255).round()),
+                                      ),
+                                    )
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildVariantSelectorsAsCustomDropdowns() {
     if (_productVariants.isEmpty || _isLoadingDetails) {
       return const SizedBox.shrink();
     }
@@ -588,95 +796,231 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
     if (grouped.isEmpty) {
         return const SizedBox.shrink();
     }
-    final List<Widget> dropdowns = [];
+    final List<Widget> customDropdowns = [];
     final ColorScheme clr = Theme.of(context).colorScheme;
     final TextTheme txt = Theme.of(context).textTheme;
 
     grouped.forEach((groupName, variantsInGroup) {
-      ProductVariant? currentlySelectedVariant = _selectedVariants[groupName];
-      if (currentlySelectedVariant == null && variantsInGroup.any((v) => v.isSelected)) {
-          currentlySelectedVariant = variantsInGroup.firstWhere((v) => v.isSelected);
+      ProductVariant? currentlySelectedForGroup = _selectedVariants[groupName];
+       if (currentlySelectedForGroup == null && variantsInGroup.any((v) => v.isSelected)) {
+          currentlySelectedForGroup = variantsInGroup.firstWhere((v) => v.isSelected);
       }
       
-      dropdowns.add(
+      bool isExpanded = _variantGroupExpandedState[groupName] ?? false;
+
+      customDropdowns.add(
         Padding(
-          padding: const EdgeInsets.only(top:20.0, bottom: 6.0),
-          child: Text(
-            groupName, 
-            style: txt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: clr.onSurface.withAlpha(220))
-          ),
-        )
-      );
-      dropdowns.add(
-        DropdownButtonFormField<ProductVariant>(
-          decoration: InputDecoration(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            fillColor: clr.surface,
-            filled: true,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-              borderSide: BorderSide(color: clr.outline.withAlpha(100), width: 1.0),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-              borderSide: BorderSide(color: clr.outline.withAlpha(100), width: 1.0),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10.0),
-              borderSide: BorderSide(color: clr.primary, width: 1.8),
-            ),
-          ),
-          value: currentlySelectedVariant,
-          hint: Text("Kies ${groupName.toLowerCase()}", style: TextStyle(color: clr.onSurface.withAlpha(150))),
-          isExpanded: true,
-          icon: Icon(Icons.keyboard_arrow_down_rounded, color: clr.primary, size: 28),
-          dropdownColor: clr.surfaceContainerHigh,
-          style: txt.bodyLarge?.copyWith(color: clr.onSurface),
-          items: variantsInGroup.map((ProductVariant variant) {
-            return DropdownMenuItem<ProductVariant>(
-              value: variant,
-              child: Text(
-                variant.variantName,
-                style: TextStyle(
-                  fontWeight: variant.isSelected ? FontWeight.bold : FontWeight.normal,
-                  color: variant.isSelected ? clr.primary : clr.onSurface,
-                )
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                groupName,
+                style: txt.titleSmall?.copyWith(fontWeight: FontWeight.w600, color: clr.onSurfaceVariant)
               ),
-            );
-          }).toList(),
-          onChanged: (ProductVariant? newValue) {
-            if (newValue != null && !newValue.isSelected) {
-              setState(() {
-                _selectedVariants[groupName] = newValue;
-              });
-              _navigateToVariant(newValue);
-            }
-          },
-          selectedItemBuilder: (BuildContext context) {
-             return variantsInGroup.map<Widget>((ProductVariant item) {
-               return Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  currentlySelectedVariant?.variantName ?? item.variantName,
-                  style: txt.bodyLarge?.copyWith(
-                    color: clr.onSurface,
-                    fontWeight: FontWeight.w500,
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _variantGroupExpandedState[groupName] = !isExpanded;
+                  });
+                },
+                borderRadius: BorderRadius.circular(10.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                  decoration: BoxDecoration(
+                    color: clr.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(10.0),
+                    border: Border.all(color: clr.outline.withAlpha(100), width: 1.0),
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ));
-             }).toList();
-          },
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        currentlySelectedForGroup?.variantName ?? "Selecteer ${groupName.toLowerCase()}",
+                        style: txt.bodyLarge?.copyWith(
+                          color: currentlySelectedForGroup != null ? clr.onSurface : clr.onSurfaceVariant,
+                          fontWeight: FontWeight.w500
+                        ),
+                      ),
+                      Icon(
+                        isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: clr.primary,
+                        size: 26,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (isExpanded)
+                Container(
+                  margin: const EdgeInsets.only(top: 2.0),
+                  decoration: BoxDecoration(
+                     color: clr.surfaceContainerLowest,
+                     borderRadius: const BorderRadius.only(
+                       bottomLeft: Radius.circular(10.0),
+                       bottomRight: Radius.circular(10.0),
+                     ),
+                     border: Border.all(color: clr.outline.withAlpha(100), width: 1.0),
+                  ),
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: variantsInGroup.length,
+                    itemBuilder: (context, index) {
+                      final variant = variantsInGroup[index];
+                      bool isCurrentlySelectedInList = currentlySelectedForGroup?.productUrl == variant.productUrl;
+                      return Material(
+                        color: isCurrentlySelectedInList ? clr.primary.withAlpha(40) : Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            if (!variant.isSelected) {
+                              _navigateToVariant(variant);
+                            }
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                            child: Text(
+                              variant.variantName,
+                              style: txt.bodyLarge?.copyWith(
+                                color: isCurrentlySelectedInList ? clr.primary : clr.onSurface,
+                                fontWeight: isCurrentlySelectedInList ? FontWeight.bold : FontWeight.normal,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    separatorBuilder: (context, index) => Divider(
+                      height: 1, 
+                      thickness: 0.5, 
+                      color: clr.outline.withAlpha(80),
+                      indent: 16,
+                      endIndent: 16,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         )
       );
     });
     
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: dropdowns,
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: customDropdowns,
     );
+  }
+
+  Widget _buildStoreAvailabilitySection() {
+    final TextTheme txt = Theme.of(context).textTheme;
+    final ColorScheme clr = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16.0, 20.0, 16.0, 0.0),
+          child: Text("Beschikbaarheid", style: txt.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+        ),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          decoration: BoxDecoration(
+            color: clr.surfaceContainer,
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          child: TabBar(
+            controller: _availabilityTabController,
+            indicator: BoxDecoration(
+              borderRadius: BorderRadius.circular(8.0),
+              color: clr.primary.withAlpha(0)
+            ),
+            indicatorPadding: const EdgeInsets.all(4.0),
+            labelColor: clr.primary,
+            unselectedLabelColor: clr.onSurfaceVariant,
+            labelStyle: txt.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+            unselectedLabelStyle: txt.bodyMedium,
+            tabs: const [
+              Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.store_mall_directory_outlined, size: 18), SizedBox(width: 8), Text("Afhalen")])),
+              Tab(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.local_shipping_outlined, size: 18), SizedBox(width: 8), Text("Bezorgen")])),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 350, 
+          child: TabBarView(
+            controller: _availabilityTabController,
+            children: <Widget>[
+              SingleChildScrollView( 
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: ProductStockList(
+                    isLoadingStock: _isLoadingStock,
+                    stockError: _stockError,
+                    storeStocks: _storeStocks,
+                  ),
+                ),
+              ),
+              SingleChildScrollView( 
+                child: _buildDeliveryInfo(txt, clr),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryInfo(TextTheme txt, ColorScheme clr) {
+      if (_isLoadingDetails && _deliveryTime == null && _deliveryCost == null && _deliveryFreeFrom == null) {
+          return const Padding(
+              padding: EdgeInsets.all(16.0),
+              child: Center(child: CircularProgressIndicator()),
+          );
+      }
+      if (_deliveryTime == null && _deliveryCost == null && _deliveryFreeFrom == null) {
+          return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.all(16.0),
+              decoration: BoxDecoration(
+                  color: clr.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(12.0),
+              ),
+              child: const Center(child: Text("Bezorginformatie niet beschikbaar voor dit product.")),
+          );
+      }
+
+      return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+              color: clr.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12.0),
+          ),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                  Row(
+                      children: [
+                          Icon(Icons.local_shipping_outlined, color: clr.primary, size: 22),
+                          const SizedBox(width: 10),
+                          Text("Thuisbezorgd", style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                          if (_deliveryCost != null && _deliveryCost!.isNotEmpty)
+                              Text(" $_deliveryCost", style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_deliveryTime != null && _deliveryTime!.isNotEmpty)
+                      Text("Verwachte bezorging: ${_deliveryTime!}", style: txt.bodyMedium),
+                  if (_deliveryFreeFrom != null && _deliveryFreeFrom!.isNotEmpty)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(_deliveryFreeFrom!, style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant)),
+                      ),
+              ],
+          ),
+      );
   }
 
 
@@ -684,53 +1028,35 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
   Widget build(BuildContext context)
   {
     final TextTheme txt = Theme.of(context).textTheme;
+    final ColorScheme clr = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: clr.background,
       appBar: AppBar(
-        title: Text(_displayPageTitle, style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
+        title: Text("Product Details", style: txt.titleLarge),
         actions: const [],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.only(top: 16.0, bottom: 24.0),
+        padding: const EdgeInsets.only(bottom: 24.0), 
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children:
           [
-            ProductImageHeader(
-              product: widget.product, 
-              displayTitle: _displayPageTitle,
-              displayArticleCode: _displayPageArticleCode,
-              displayEan: _displayPageEan, 
-              detailImageUrl: _detailImageUrl,
-              orderStatus: _orderStatus,
-              isLoadingDetails: _isLoadingDetails,
-            ),
-
-            _buildPriceAndActionSection(txt, Theme.of(context).colorScheme),
-
-            _buildVariantDropdownSelectors(),
-
+            const SizedBox(height: 8),
+            _buildProductHeaderSection(txt, clr),
+            _buildImageAndPriceSection(txt, clr),            
+            _buildVariantSelectorsAsCustomDropdowns(),
+            const SizedBox(height: 16),
+            _buildStoreAvailabilitySection(),
             const SizedBox(height: 24),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text('Winkelvoorraad:', style: txt.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: ProductStockList(
-                isLoadingStock: _isLoadingStock,
-                stockError: _stockError,
-                storeStocks: _storeStocks,
+            if (!_isLoadingDetails && (_description !=null || _specifications != null))
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Divider(thickness: 0.5),
               ),
-            ),
-            const SizedBox(height: 24),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Divider(thickness: 0.5),
-            ),
-            const SizedBox(height: 20),
+            if (!_isLoadingDetails && (_description !=null || _specifications != null))
+              const SizedBox(height: 20),
+
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: ProductInfoSection(
@@ -755,8 +1081,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen>
         ),
       ),
       bottomNavigationBar: CustomBottomNavBar(
-      onTabSelected: _onBottomNavTabSelectedOnDetailsPage,
-    ),
+        onTabSelected: _onBottomNavTabSelectedOnDetailsPage,
+      ),
     );
   }
 }

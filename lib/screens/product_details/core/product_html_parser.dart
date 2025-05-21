@@ -2,21 +2,13 @@ import 'package:html/parser.dart' show parse;
 import 'package:html/dom.dart' as dom;
 import 'product_details_data.dart';
 
-// Helper functie om een string naar Title Case te converteren
-String _toTitleCase(String text) {
-  if (text.isEmpty) return '';
-  return text.split(' ')
-      .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}' : '')
-      .join(' ');
-}
-
-
 Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, String> args) async {
   final String htmlBody = args['htmlBody']!;
   final String currentProductUrl = args['currentProductUrl']!;
 
   final document = parse(htmlBody);
   List<ProductVariant> foundVariants = [];
+  List<String> galleryUrls = [];
   String? pDesc;
   String? pSpecs;
   String? fImgUrl;
@@ -31,6 +23,9 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
   String? scrapedPageTitle;
   String? scrapedPageArticleCode;
   String? scrapedPageEan;
+  String? deliveryCost;
+  String? deliveryFreeFrom;
+  String? deliveryTime;
 
   final RegExp priceCleanRegex = RegExp(r'[^\d,.]');
   final RegExp promoDescCleanupRegex1 = RegExp(r'Bekijk alle producten.*$', multiLine: true);
@@ -52,11 +47,13 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
             scrapedPageArticleCode = idSegment;
         }
       }
-      // Probeer titel uit URL slug te halen als fallback of primaire bron
       if (pIndex > 0 && pIndex -1 < uri.pathSegments.length) {
         String slug = uri.pathSegments[pIndex -1];
-        if (slug.isNotEmpty && slug != "assortiment") { // Voorkom dat "assortiment" de titel wordt
-            scrapedPageTitle = _toTitleCase(slug.replaceAll('-', ' '));
+        if (slug.isNotEmpty && slug != "assortiment") { 
+            String titleFromSlug = slug.replaceAll('-', ' ');
+            scrapedPageTitle = titleFromSlug.split(' ')
+                .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1).toLowerCase()}' : '')
+                .join(' ');
         }
       }
     }
@@ -79,7 +76,6 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
         }
     }
 
-    // Als titel nog niet uit URL is gehaald, probeer HTML te parsen
     if (scrapedPageTitle == null || scrapedPageTitle.isEmpty) {
         scrapedPageTitle = document.querySelector('h1.pdp-title, .product-title h1, .page-title')?.text.trim();
         if (scrapedPageTitle == null || scrapedPageTitle.isEmpty) {
@@ -87,7 +83,7 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
             if (scrapedPageTitle != null && scrapedPageTitle.contains(" - GAMMA")) {
                 scrapedPageTitle = scrapedPageTitle.substring(0, scrapedPageTitle.indexOf(" - GAMMA")).trim();
             }
-             if (scrapedPageTitle != null && scrapedPageTitle.contains(" | GAMMA")) { // Nog een variant
+             if (scrapedPageTitle != null && scrapedPageTitle.contains(" | GAMMA")) { 
                 scrapedPageTitle = scrapedPageTitle.substring(0, scrapedPageTitle.indexOf(" | GAMMA")).trim();
             }
         }
@@ -100,6 +96,77 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
     if (scrapedPageEan != null && scrapedPageEan.isEmpty) {
         scrapedPageEan = null;
     }
+
+    final galleryElement = document.querySelector('div.js-product-gallery');
+    if (galleryElement != null) {
+      final String? imagesData = galleryElement.attributes['data-product-images'];
+      if (imagesData != null && imagesData.isNotEmpty) {
+        final List<String> baseImageUrls = imagesData.split(',').where((url) => url.trim().isNotEmpty).toList();
+        for (String baseUrl in baseImageUrls) {
+          if (baseUrl.endsWith('/')) {
+             galleryUrls.add('${baseUrl}123'); 
+          } else if (!baseUrl.contains('.')) { 
+             galleryUrls.add('$baseUrl/123');
+          }
+          else {
+             galleryUrls.add(baseUrl); 
+          }
+        }
+      }
+    }
+    
+    fImgUrl = document.querySelector('img.product-main-image')?.attributes['data-src'] ?? document.querySelector('img.product-main-image')?.attributes['src'];
+    if (fImgUrl == null || fImgUrl.contains('/placeholders/')) {
+        fImgUrl = document.querySelector('meta[itemprop="image"]')?.attributes['content'];
+    }
+    if (fImgUrl != null && fImgUrl.contains('/placeholders/')) fImgUrl = null;
+
+
+    if (galleryUrls.isEmpty && fImgUrl != null) {
+        galleryUrls.add(fImgUrl);
+    }
+
+    final deliveryInfoElement = document.querySelector('div.delivery-information');
+    if (deliveryInfoElement != null) {
+        final costElement = deliveryInfoElement.querySelector('.delivery-option-title > span:last-child');
+        deliveryCost = costElement?.text.trim();
+
+        final paragraphs = deliveryInfoElement.querySelectorAll('p');
+        if (paragraphs.isNotEmpty) {
+            for (var p in paragraphs) {
+                String pText = p.text.trim();
+                if (pText.toLowerCase().contains('gratis vanaf')) {
+                    deliveryFreeFrom = pText;
+                } else if (pText.toLowerCase().contains('in huis') || 
+                           pText.toLowerCase().contains('bezorgd op') ||
+                           pText.toLowerCase().contains('bezorging tussen')) {
+                    
+                    String tempDeliveryTime = pText.replaceFirst('Vandaag besteld, ', '').replaceFirst(' in huis', '').trim();
+                    
+                    if (tempDeliveryTime == pText.trim() || pText.toLowerCase().contains('bezorging tussen')) {
+                        final RegExp deliveryBetweenRegex = RegExp(r'Bezorging tussen\s+(.+)', caseSensitive: false);
+                        final Match? deliveryBetweenMatch = deliveryBetweenRegex.firstMatch(pText);
+                        if (deliveryBetweenMatch != null && deliveryBetweenMatch.groupCount >= 1) {
+                            tempDeliveryTime = deliveryBetweenMatch.group(1)!.trim();
+                        } else {
+                            tempDeliveryTime = pText
+                                .replaceFirst(RegExp(r'Bezorgd op\s*', caseSensitive: false), '')
+                                .replaceFirst(RegExp(r'Bezorging tussen\s*', caseSensitive: false), '')
+                                .trim();
+                        }
+                    }
+                    deliveryTime = tempDeliveryTime;
+                }
+            }
+        }
+        if ((deliveryTime == null || deliveryTime.isEmpty) && deliveryCost != null) {
+            final deliveryTimeElement = deliveryInfoElement.querySelector('.delivery-time-estimate, .eta-message');
+            if (deliveryTimeElement != null) {
+                deliveryTime = deliveryTimeElement.text.trim();
+            }
+        }
+    }
+
 
     final orderBlock = document.querySelector('#product-order-block');
     if (orderBlock != null)
@@ -200,39 +267,6 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
     else
     {
       pSpecs = 'Specificaties sectie niet gevonden.';
-    }
-
-    final imgEl = document.querySelector('img.product-main-image');
-    if (imgEl != null)
-    {
-      String? dS = imgEl.attributes['data-src'];
-      String? s = imgEl.attributes['src'];
-      String? tmp = dS ?? s;
-      if (tmp != null && tmp.contains('/placeholders/'))
-      {
-        String? alt = (tmp == dS) ? s : dS;
-        if (alt != null && !alt.contains('/placeholders/'))
-        {
-            tmp = alt;
-        }
-        else
-        {
-            tmp = null;
-        }
-      }
-      if (tmp != null && tmp.startsWith('http'))
-      {
-          fImgUrl = tmp;
-      }
-    }
-    if (fImgUrl == null)
-    {
-      final metaImg = document.querySelector('meta[itemprop="image"]');
-      String? mUrl = metaImg?.attributes['content'];
-      if (mUrl != null && mUrl.startsWith('http'))
-      {
-          fImgUrl = mUrl;
-      }
     }
 
     newPrice = document.querySelector('meta[itemprop="price"]')?.attributes['content']?.trim();
@@ -399,5 +433,9 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
     discountLabel: newDiscount,
     promotionDescription: newPromoDesc,
     variants: foundVariants,
+    galleryImageUrls: galleryUrls,
+    deliveryCost: deliveryCost,
+    deliveryFreeFrom: deliveryFreeFrom,
+    deliveryTime: deliveryTime,
   );
 }
