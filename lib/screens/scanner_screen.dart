@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'dart:async'; 
 
-
 class ScannerScreen extends StatefulWidget
 {
   const ScannerScreen({super.key});
@@ -17,7 +16,6 @@ class _ScannerScreenState extends State<ScannerScreen>
 {
   final MobileScannerController ctrl = MobileScannerController(
       formats: const [BarcodeFormat.ean13, BarcodeFormat.qrCode],
-      // Andere optionele instellingen zoals resolutie, etc. kunnen hier
   );
 
   bool _isProcessingDetect = false;
@@ -25,17 +23,23 @@ class _ScannerScreenState extends State<ScannerScreen>
   CameraFacing cam = CameraFacing.back;
   Color _overlayBorderColor = Colors.white.withOpacity(0.6);
   Timer? _feedbackTimer;
+  Timer? _scanDelayTimer;
+  
+ 
+  String? _lastScannedCode;
+  int _sameCodeCount = 0;
+  static const int _requiredStableScans = 3; 
+  static const int _scanDelayMs = 100; 
 
   @override
   void dispose()
   {
     ctrl.dispose();
     _feedbackTimer?.cancel();
+    _scanDelayTimer?.cancel();
     super.dispose();
   }
-
-  /// Handles barcode/QR detection events.
-  /// Validates EAN-13 or extracts Product URL from Gamma QR Code.
+  
   void _onDetect(BarcodeCapture capture)
   {
     if (_isProcessingDetect) return;
@@ -46,7 +50,24 @@ class _ScannerScreenState extends State<ScannerScreen>
     {
       final String scannedValue = barcode.rawValue!;
       final BarcodeFormat scannedFormat = barcode.format;
-      print('[Scanner] Code gedetecteerd: $scannedValue (Formaat: $scannedFormat)');
+      
+      if (_lastScannedCode == scannedValue)
+      {
+        _sameCodeCount++;
+      }
+      else
+      {
+        _lastScannedCode = scannedValue;
+        _sameCodeCount = 1;
+      }
+      
+      print('[Scanner] Code gedetecteerd: $scannedValue (Formaat: $scannedFormat, Count: $_sameCodeCount)');
+      
+  
+      if (_sameCodeCount < _requiredStableScans)
+      {
+        return;
+      }
 
       String? resultValue;
       bool isValid = false;
@@ -56,8 +77,16 @@ class _ScannerScreenState extends State<ScannerScreen>
         final bool isValidEan13Format = RegExp(r'^[0-9]{13}$').hasMatch(scannedValue);
         if (isValidEan13Format)
         {
-          resultValue = scannedValue;
-          isValid = true;
+        
+          if (_validateEan13Checksum(scannedValue))
+          {
+            resultValue = scannedValue;
+            isValid = true;
+          }
+          else
+          {
+            print('[Scanner] EAN-13 checksum ongeldig: $scannedValue');
+          }
         }
         else
         {
@@ -67,14 +96,14 @@ class _ScannerScreenState extends State<ScannerScreen>
       else if (scannedFormat == BarcodeFormat.qrCode)
       {
         final Uri? uri = Uri.tryParse(scannedValue);
-        // Check of het een geldige gamma.nl product URL is
+  
         if (uri != null &&
             uri.host.endsWith('gamma.nl') &&
             uri.pathSegments.contains('assortiment') &&
             uri.pathSegments.contains('p') &&
             uri.pathSegments.last.isNotEmpty)
         {
-           // Geef de volledige URL terug
+         
            resultValue = scannedValue;
            isValid = true;
            print('[Scanner] Geldige Gamma product URL gevonden: $resultValue');
@@ -82,7 +111,7 @@ class _ScannerScreenState extends State<ScannerScreen>
         else
         {
            print('[Scanner] QR code gedetecteerd, maar geen geldige Gamma product URL: $scannedValue');
-           // Optioneel: Andere QR code logica hier
+           
         }
       }
       else
@@ -92,23 +121,53 @@ class _ScannerScreenState extends State<ScannerScreen>
 
       if (isValid && resultValue != null)
       {
-        // Geldige code gevonden
         if (mounted)
         {
           setState(() { _isProcessingDetect = true; });
         }
-        print('[Scanner] Geldige code doorgegeven: $resultValue');
-        Navigator.pop(context, resultValue); // Geef resultaat terug
+        
+        
+        _scanDelayTimer = Timer(Duration(milliseconds: _scanDelayMs), ()
+        {
+          if (mounted)
+          {
+            print('[Scanner] Geldige code doorgegeven: $resultValue');
+            Navigator.pop(context, resultValue);
+          }
+        });
       }
       else if (!isValid)
       {
-        // Ongeldige scan
-        _showInvalidScanFeedback(); // Toon rode rand
+        _showInvalidScanFeedback(); 
+        
+        _resetScanState();
       }
     }
  }
+ 
+ void _resetScanState()
+ {
+   _lastScannedCode = null;
+   _sameCodeCount = 0;
+ }
 
- /// Shows visual feedback (red border) for an invalid scan.
+ bool _validateEan13Checksum(String ean13)
+ {
+   if (ean13.length != 13) return false;
+   
+   int sum = 0;
+   for (int i = 0; i < 12; i++)
+   {
+     int digit = int.tryParse(ean13[i]) ?? 0;
+     sum += (i % 2 == 0) ? digit : digit * 3;
+   }
+   
+   int checkDigit = (10 - (sum % 10)) % 10;
+   int providedCheckDigit = int.tryParse(ean13[12]) ?? -1;
+   
+   return checkDigit == providedCheckDigit;
+ }
+ 
  void _showInvalidScanFeedback()
  {
    _feedbackTimer?.cancel();
@@ -125,7 +184,6 @@ class _ScannerScreenState extends State<ScannerScreen>
    }
  }
 
-  // Toggles the flashlight.
   Future<void> _torch() async
   {
     try
@@ -146,7 +204,6 @@ class _ScannerScreenState extends State<ScannerScreen>
     }
   }
 
-  // Switches between front and back camera.
   Future<void> _cam() async
   {
     try
@@ -206,7 +263,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             errorBuilder: (ctx, err, ch)
             {
               String msg = 'Camera Fout.';
-              // Geef specifiekere melding bij permissie fouten
+             
               if (err.errorDetails?.message?.toLowerCase().contains('permission') ?? false || err.errorCode.name.contains('CAMERA'))
               {
                 msg = 'Camera permissie geweigerd. Controleer de app instellingen.';
@@ -220,7 +277,7 @@ class _ScannerScreenState extends State<ScannerScreen>
             },
             placeholderBuilder: (ctx, ch) => const Center(child: CircularProgressIndicator()),
           ),
-          // Overlay met dynamische randkleur voor feedback
+         
           Container(
             width: MediaQuery.of(context).size.width * 0.75,
             height: MediaQuery.of(context).size.height * 0.3,
@@ -228,7 +285,23 @@ class _ScannerScreenState extends State<ScannerScreen>
               border: Border.all(color: _overlayBorderColor, width: 2.0),
               borderRadius: BorderRadius.circular(12),
             ),
-          )
+          ),
+         
+          if (_sameCodeCount > 0 && _sameCodeCount < _requiredStableScans)
+            Positioned(
+              bottom: 100,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Stabiliseren... ${_sameCodeCount}/$_requiredStableScans',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+            ),
         ]
       ),
     );
