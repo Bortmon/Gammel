@@ -413,7 +413,7 @@ Future<ProductDetailsScrapeResult> parseProductDetailsHtmlIsolate(Map<String, St
         }
       }
     }
-  } catch (e,s) {
+  } catch (e) {
     // no-op
   }
 

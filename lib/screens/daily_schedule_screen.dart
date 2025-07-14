@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 
 import '../widgets/custom_bottom_nav_bar.dart';
 import 'scanner_screen.dart';
-import 'home_page.dart';
 
 class DailyShiftEntry
 {

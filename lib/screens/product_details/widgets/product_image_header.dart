@@ -1,47 +1,46 @@
 import 'package:flutter/material.dart';
-import '../core/product_details_data.dart';
-import 'product_gallery_view.dart';
+import '../core/product_details_data.dart'; 
+import 'product_gallery_view.dart'; 
 
-class ProductImageHeader extends StatelessWidget {
+class ProductPrimaryInfoCard extends StatelessWidget {
   final String displayTitle;
   final String displayArticleCode;
   final String? displayEan;
   final String? detailImageUrl;
-  final List<String> galleryImageUrlsForNav;
+  final List<String> galleryImageUrls;
   final bool isLoadingDetails;
-
   final String? priceString;
   final OrderabilityStatus orderStatus;
 
-  const ProductImageHeader({
+  const ProductPrimaryInfoCard({
     super.key,
     required this.displayTitle,
     required this.displayArticleCode,
     this.displayEan,
-    required this.detailImageUrl,
-    required this.galleryImageUrlsForNav,
+    this.detailImageUrl,
+    required this.galleryImageUrls,
     required this.isLoadingDetails,
-
     this.priceString,
     required this.orderStatus,
   });
 
   void _showImageGalleryDialog(BuildContext context) {
-    if (galleryImageUrlsForNav.isEmpty && detailImageUrl == null) return;
+    if (galleryImageUrls.isEmpty && detailImageUrl == null) return;
 
-    List<String> imagesToShow = galleryImageUrlsForNav.isNotEmpty
-        ? galleryImageUrlsForNav
+    final List<String> imagesToShow = galleryImageUrls.isNotEmpty
+        ? galleryImageUrls
         : (detailImageUrl != null ? [detailImageUrl!] : []);
+        
     if (imagesToShow.isEmpty) return;
 
-    int initialImageIndex = 0;
+    int initialIndex = 0;
     if (detailImageUrl != null && imagesToShow.contains(detailImageUrl)) {
-      initialImageIndex = imagesToShow.indexOf(detailImageUrl!);
+      initialIndex = imagesToShow.indexOf(detailImageUrl!);
     }
 
     showDialog(
       context: context,
-      barrierColor: Colors.black.withOpacity(0.85),
+      barrierColor: Colors.black.withAlpha((0.85 * 255).round()), 
       useSafeArea: false,
       builder: (BuildContext dialogContext) {
         return Dialog(
@@ -49,8 +48,8 @@ class ProductImageHeader extends StatelessWidget {
           insetPadding: EdgeInsets.zero,
           shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
           child: ProductGalleryDialogContent(
-            imageUrls: imagesToShow,
-            initialIndex: initialImageIndex,
+            imageUrls: imagesToShow, 
+            initialIndex: initialIndex,
           ),
         );
       },
@@ -59,7 +58,6 @@ class ProductImageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final txt = Theme.of(context).textTheme;
     final clr = Theme.of(context).colorScheme;
 
     return Container(
@@ -68,43 +66,19 @@ class ProductImageHeader extends StatelessWidget {
       decoration: BoxDecoration(
         color: clr.surfaceContainer,
         borderRadius: BorderRadius.circular(16.0),
-        border: Border.all(color: clr.outline.withOpacity(0.2)),
+        border: Border.all(color: clr.outline.withAlpha((0.2 * 255).round())), 
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  displayTitle,
-                  style: txt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(width: 16),
-              if (displayArticleCode != "Laden..." && displayArticleCode != "Code?")
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: clr.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    "Art: $displayArticleCode",
-                    style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant),
-                  ),
-                ),
-            ],
-          ),
+          _buildTitleSection(context),
           const SizedBox(height: 16),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildProductImage(context, clr),
               const SizedBox(width: 16),
-              _buildPriceAndDetails(txt, clr),
+              _buildPriceAndDetails(context),
             ],
           ),
         ],
@@ -112,8 +86,40 @@ class ProductImageHeader extends StatelessWidget {
     );
   }
 
+  Widget _buildTitleSection(BuildContext context) {
+    final txt = Theme.of(context).textTheme;
+    final clr = Theme.of(context).colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            displayTitle,
+            style: txt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 16),
+        if (displayArticleCode != "Laden..." && displayArticleCode != "Code?")
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: clr.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              "Art: $displayArticleCode",
+              style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant),
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildProductImage(BuildContext context, ColorScheme clr) {
-    final heroTag = detailImageUrl ?? galleryImageUrlsForNav.firstOrNull ?? 'product_image_hero';
+    final heroTag =
+        detailImageUrl ?? galleryImageUrls.firstOrNull ?? 'product_image_hero';
 
     return SizedBox(
       width: 96,
@@ -140,18 +146,21 @@ class ProductImageHeader extends StatelessWidget {
                               : Center(
                                   child: CircularProgressIndicator(
                                   value: p.expectedTotalBytes != null
-                                      ? p.cumulativeBytesLoaded / p.expectedTotalBytes!
+                                      ? p.cumulativeBytesLoaded /
+                                          p.expectedTotalBytes!
                                       : null,
                                   strokeWidth: 2.0,
                                   color: clr.primary,
                                 )),
                           errorBuilder: (ctx, err, st) => Center(
                               child: Icon(Icons.broken_image_outlined,
-                                  size: 40, color: clr.onSurfaceVariant.withOpacity(0.4))),
+                                  size: 40,
+                                  color: clr.onSurfaceVariant.withAlpha((0.4 * 255).round()))), 
                         )
                       : Center(
                           child: Icon(Icons.image_not_supported_outlined,
-                              size: 40, color: clr.onSurfaceVariant.withOpacity(0.4)))),
+                              size: 40,
+                              color: clr.onSurfaceVariant.withAlpha((0.4 * 255).round())))), 
             ),
           ),
         ),
@@ -159,30 +168,40 @@ class ProductImageHeader extends StatelessWidget {
     );
   }
 
-  Widget _buildPriceAndDetails(TextTheme txt, ColorScheme clr) {
+  Widget _buildPriceAndDetails(BuildContext context) {
+    final txt = Theme.of(context).textTheme;
+    final clr = Theme.of(context).colorScheme;
+
     return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           if (isLoadingDetails && priceString == null)
-            Text("Prijs laden...", style: txt.headlineMedium?.copyWith(color: clr.onSurfaceVariant))
+            Text("Prijs laden...",
+                style:
+                    txt.headlineMedium?.copyWith(color: clr.onSurfaceVariant))
           else if (priceString != null)
             Text(
               '€$priceString',
-              style: txt.headlineMedium?.copyWith(color: clr.secondary, fontWeight: FontWeight.bold),
+              style: txt.headlineMedium
+                  ?.copyWith(color: clr.secondary, fontWeight: FontWeight.bold),
             )
           else
             Text('Prijs onbekend',
-                style: txt.titleLarge?.copyWith(fontStyle: FontStyle.italic, color: clr.onSurfaceVariant)),
+                style: txt.titleLarge?.copyWith(
+                    fontStyle: FontStyle.italic, color: clr.onSurfaceVariant)),
           const SizedBox(height: 8),
           if (displayEan != null && displayEan!.isNotEmpty)
             Row(
               children: [
-                Icon(Icons.inventory_2_outlined, size: 16, color: clr.onSurfaceVariant),
+                Icon(Icons.inventory_2_outlined,
+                    size: 16, color: clr.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Expanded(
                     child: Text(displayEan!,
-                        style: txt.bodyMedium?.copyWith(color: clr.onSurfaceVariant))),
+                        style: txt.bodyMedium
+                            ?.copyWith(color: clr.onSurfaceVariant))),
               ],
             ),
           const SizedBox(height: 8),
@@ -201,11 +220,13 @@ class ProductImageHeader extends StatelessWidget {
                         : orderStatus == OrderabilityStatus.outOfAssortment
                             ? "Uit assortiment"
                             : "Status onbekend",
-                style: txt.labelMedium?.copyWith(color: clr.onPrimary, fontWeight: FontWeight.bold),
+                style: txt.labelMedium
+                    ?.copyWith(color: clr.onPrimary, fontWeight: FontWeight.bold),
               ),
               backgroundColor: clr.primary,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               side: BorderSide.none,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
         ],
       ),
