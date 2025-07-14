@@ -1,3 +1,5 @@
+// lib/widgets/product_title_header.dart
+
 import 'package:flutter/material.dart';
 
 class ProductTitleHeader extends StatelessWidget {
@@ -18,7 +20,7 @@ class ProductTitleHeader extends StatelessWidget {
     final ColorScheme clr = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -29,24 +31,25 @@ class ProductTitleHeader extends StatelessWidget {
               Expanded(
                 child: Text(
                   displayTitle,
-                  style: txt.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: clr.onBackground),
+                  style: txt.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(width: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: clr.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+              if (displayArticleCode != "Laden..." && displayArticleCode != "Code?")
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: clr.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    "Art: $displayArticleCode",
+                    style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant),
+                  ),
                 ),
-                child: Text(
-                  "Art: $displayArticleCode",
-                  style: txt.bodySmall?.copyWith(color: clr.onSurfaceVariant),
-                ),
-              ),
             ],
           ),
-          if (productDimensions != null && productDimensions!.isNotEmpty) 
+          if (productDimensions != null && productDimensions!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4.0),
               child: Text(
